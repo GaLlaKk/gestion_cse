@@ -64,6 +64,14 @@ MAX_CONCURRENT_REQUESTS = 8
 MAX_RATE_LIMIT_RETRIES = 5
 REQUEST_TIMEOUT_SECONDS = 30
 
+
+def is_external_epsilon_email(email):
+    return (
+        email is not None
+        and email.casefold().endswith(f".ext@{REPORT_DOMAIN}")
+    )
+
+
 # --- AUTHENTIFICATION ---
 app = PublicClientApplication(CLIENT_ID, authority=AUTHORITY)
 flow = app.initiate_device_flow(scopes=SCOPES)
@@ -173,11 +181,16 @@ def fetch_user_record(user_id_or_email):
             "business_unit": user_info.get("department"),
         },
         "hierarchy": {
-            "manager_email": manager_email,
+            "manager_email": (
+                None
+                if is_external_epsilon_email(manager_email)
+                else manager_email
+            ),
             "direct_reports": [
                 report["mail"]
                 for report in direct_reports_data
                 if report.get("mail")
+                and not is_external_epsilon_email(report["mail"])
             ],
         },
     }
@@ -217,7 +230,9 @@ def fetch_hierarchy():
                     user_entry["identity"]["name"],
                     user_entry["identity"]["email"],
                 )
-                if is_root or is_epsilon_user:
+                if (is_root or is_epsilon_user) and not is_external_epsilon_email(
+                    user_entry["identity"]["email"]
+                ):
                     org_data.append(user_entry)
 
                 for report in direct_reports_data:

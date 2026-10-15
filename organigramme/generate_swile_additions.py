@@ -82,6 +82,7 @@ def generate_additions(
     excluded_management = 0
     excluded_existing = 0
     excluded_invalid = 0
+    excluded_external = 0
     seen_emails = set()
     normalized_domain = report_domain.lstrip("@").casefold()
 
@@ -89,6 +90,9 @@ def generate_additions(
         email = (user.get("Email") or "").strip()
         normalized_email = email.casefold()
         if not normalized_email.endswith(f"@{normalized_domain}"):
+            continue
+        if normalized_email.endswith(f".ext@{normalized_domain}"):
+            excluded_external += 1
             continue
         if is_direction_position(user.get("Poste")):
             excluded_management += 1
@@ -136,7 +140,13 @@ def generate_additions(
         writer.writeheader()
         writer.writerows(additions)
 
-    return len(additions), excluded_management, excluded_existing, excluded_invalid
+    return (
+        len(additions),
+        excluded_management,
+        excluded_existing,
+        excluded_invalid,
+        excluded_external,
+    )
 
 
 def main():
@@ -184,6 +194,7 @@ def main():
         excluded_management,
         excluded_existing,
         excluded_invalid,
+        excluded_external,
     ) = generate_additions(
         args.swile_file,
         args.organization_file,
@@ -193,6 +204,7 @@ def main():
     )
     print(f"Ajouts à importer : {addition_count} -> {args.output_file}")
     print(f"Postes de direction exclus : {excluded_management}")
+    print(f"Adresses externes .ext exclues : {excluded_external}")
     print(f"Déjà présents dans Swile : {excluded_existing}")
     if excluded_invalid:
         print(f"Lignes ignorées faute de nom exploitable : {excluded_invalid}")
