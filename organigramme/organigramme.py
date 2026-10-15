@@ -56,6 +56,7 @@ CLIENT_ID = config["client_id"]
 AUTHORITY = config["authority"]
 SCOPES = scopes
 REPORT_DOMAIN = config["report_domain"].lstrip("@").casefold()
+MAX_INTERMEDIATE_LEVELS = 2
 
 # --- AUTHENTIFICATION ---
 app = PublicClientApplication(CLIENT_ID, authority=AUTHORITY)
@@ -99,7 +100,9 @@ def get_manager_email(user_id):
     return None
 
 
-def fetch_hierarchy_recursive(user_id_or_email):
+def fetch_hierarchy_recursive(
+    user_id_or_email, is_root=False, intermediate_levels=0
+):
     user_info = get_user_details(user_id_or_email)
     if not user_info:
         logger.warning("Utilisateur introuvable : %s", user_id_or_email)
@@ -156,18 +159,32 @@ def fetch_hierarchy_recursive(user_id_or_email):
         },
     }
 
-    org_data.append(user_entry)
+    email = user_info.get("mail")
+    is_epsilon_user = (
+        email is not None
+        and email.casefold().endswith(f"@{REPORT_DOMAIN}")
+    )
+    if is_root or is_epsilon_user:
+        org_data.append(user_entry)
 
-    # Appel récursif pour chaque collaborateur direct
+    # Traverser jusqu'à deux niveaux hors Epsilon pour trouver les équipes
+    # Epsilon rattachées plus bas dans l'arborescence.
     for report in direct_reports_data:
         mail = report.get("mail")
         logger.info("Vérification du collaborateur : %s", mail)
-        if mail and mail.casefold().endswith(f"@{REPORT_DOMAIN}"):
-            fetch_hierarchy_recursive(report["id"])
+        if mail:
+            is_epsilon_report = mail.casefold().endswith(f"@{REPORT_DOMAIN}")
+            if is_epsilon_report:
+                fetch_hierarchy_recursive(report["id"])
+            elif intermediate_levels < MAX_INTERMEDIATE_LEVELS:
+                fetch_hierarchy_recursive(
+                    report["id"],
+                    intermediate_levels=intermediate_levels + 1,
+                )
 
 
 # Lancement de la collecte à partir du point d'entrée
-fetch_hierarchy_recursive(START_USER_EMAIL)
+fetch_hierarchy_recursive(START_USER_EMAIL, is_root=True)
 
 # --- EXPORT CSV ---
 csv_filename = f"{date_prefix}_organisation_branche.csv"
