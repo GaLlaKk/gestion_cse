@@ -1,7 +1,10 @@
 import csv
 import json
 import logging
-from datetime import datetime
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import requests
@@ -57,6 +60,9 @@ AUTHORITY = config["authority"]
 SCOPES = scopes
 REPORT_DOMAIN = config["report_domain"].lstrip("@").casefold()
 MAX_INTERMEDIATE_LEVELS = 2
+MAX_CONCURRENT_REQUESTS = 8
+MAX_RATE_LIMIT_RETRIES = 5
+REQUEST_TIMEOUT_SECONDS = 30
 
 # --- AUTHENTIFICATION ---
 app = PublicClientApplication(CLIENT_ID, authority=AUTHORITY)
@@ -74,75 +80,88 @@ if "access_token" not in result:
 headers = {"Authorization": f"Bearer {result['access_token']}"}
 
 # --- PARCOURS DE L'ARBRE (Méthode descendante) ---
-processed_ids = set()
-org_data = []
+def request_graph(url):
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        if response.status_code != 429:
+            return response
+
+        if attempt == MAX_RATE_LIMIT_RETRIES:
+            response.raise_for_status()
+
+        retry_after = response.headers.get("Retry-After", "")
+        try:
+            delay = float(retry_after)
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                delay = max(
+                    0,
+                    (retry_at - datetime.now(timezone.utc)).total_seconds(),
+                )
+            except (TypeError, ValueError, OverflowError):
+                delay = 2**attempt
+
+        logger.warning(
+            "Microsoft Graph limite les requêtes (429) ; nouvelle tentative "
+            "dans %.1f s.",
+            delay,
+        )
+        time.sleep(delay)
 
 
-def get_user_details(user_id_or_email):
-    url = (
+def fetch_user_record(user_id_or_email):
+    user_url = (
         "https://graph.microsoft.com/v1.0/users/"
         f"{user_id_or_email}?$select=id,displayName,mail,userPrincipalName,"
         "jobTitle,department"
     )
-    res = requests.get(url, headers=headers)
-    if res.status_code == 200:
-        return res.json()
-    return None
-
-
-def get_manager_email(user_id):
-    url = (
-        f"https://graph.microsoft.com/v1.0/users/{user_id}/manager?$select=mail"
-    )
-    res = requests.get(url, headers=headers)
-    if res.status_code == 200:
-        return res.json().get("mail")
-    return None
-
-
-def fetch_hierarchy_recursive(
-    user_id_or_email, is_root=False, intermediate_levels=0
-):
-    user_info = get_user_details(user_id_or_email)
-    if not user_info:
-        logger.warning("Utilisateur introuvable : %s", user_id_or_email)
-        return
-    logger.info("Informations utilisateur : %s", user_info)
+    user_response = request_graph(user_url)
+    if user_response.status_code == 404:
+        return None
+    user_response.raise_for_status()
+    user_info = user_response.json()
     user_id = user_info["id"]
-
-    # Éviter les boucles infinies ou les doublons
-    if user_id in processed_ids:
-        return
-    processed_ids.add(user_id)
-
-    logger.info(
-        "Traitement : %s (%s)",
-        user_info.get("displayName"),
-        user_info.get("mail"),
+    email = user_info.get("mail")
+    is_epsilon_user = (
+        email is not None
+        and email.casefold().endswith(f"@{REPORT_DOMAIN}")
     )
 
-    # Récupérer le manager
-    manager_email = get_manager_email(user_id)
+    manager_email = None
+    if is_epsilon_user or user_id_or_email == START_USER_EMAIL:
+        manager_url = (
+            f"https://graph.microsoft.com/v1.0/users/{user_id}/manager"
+            "?$select=mail"
+        )
+        manager_response = request_graph(manager_url)
+        if manager_response.status_code != 404:
+            manager_response.raise_for_status()
+            manager_email = manager_response.json().get("mail")
 
-    # Récupérer les collaborateurs directs
-    reports_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/directReports?$select=id,mail,displayName"
-    rep_resp = requests.get(reports_url, headers=headers)
-
+    reports_url = (
+        f"https://graph.microsoft.com/v1.0/users/{user_id}/directReports"
+        "?$select=id,mail,displayName"
+    )
     direct_reports_data = []
-    direct_reports_emails = []
+    while reports_url:
+        reports_response = request_graph(reports_url)
+        reports_response.raise_for_status()
+        reports_page = reports_response.json()
+        direct_reports_data.extend(reports_page.get("value", []))
+        reports_url = reports_page.get("@odata.nextLink")
 
-    if rep_resp.status_code == 200:
-        direct_reports_data = rep_resp.json().get("value", [])
-        direct_reports_emails = [
-            r["mail"] for r in direct_reports_data if r.get("mail")
-        ]
-
-    # Construction de l'entrée utilisateur
     user_entry = {
         "id": user_id,
         "identity": {
             "name": user_info.get("displayName"),
-            "email": user_info.get("mail"),
+            "email": email,
             "username": (
                 user_info["userPrincipalName"].split("@", 1)[0]
                 if user_info.get("userPrincipalName")
@@ -155,36 +174,80 @@ def fetch_hierarchy_recursive(
         },
         "hierarchy": {
             "manager_email": manager_email,
-            "direct_reports": direct_reports_emails,
+            "direct_reports": [
+                report["mail"]
+                for report in direct_reports_data
+                if report.get("mail")
+            ],
         },
     }
+    return user_entry, direct_reports_data, is_epsilon_user
 
-    email = user_info.get("mail")
-    is_epsilon_user = (
-        email is not None
-        and email.casefold().endswith(f"@{REPORT_DOMAIN}")
-    )
-    if is_root or is_epsilon_user:
-        org_data.append(user_entry)
 
-    # Traverser jusqu'à deux niveaux hors Epsilon pour trouver les équipes
-    # Epsilon rattachées plus bas dans l'arborescence.
-    for report in direct_reports_data:
-        mail = report.get("mail")
-        logger.info("Vérification du collaborateur : %s", mail)
-        if mail:
-            is_epsilon_report = mail.casefold().endswith(f"@{REPORT_DOMAIN}")
-            if is_epsilon_report:
-                fetch_hierarchy_recursive(report["id"])
-            elif intermediate_levels < MAX_INTERMEDIATE_LEVELS:
-                fetch_hierarchy_recursive(
-                    report["id"],
-                    intermediate_levels=intermediate_levels + 1,
+def fetch_hierarchy():
+    org_data = []
+    processed_ids = set()
+    pending = [(START_USER_EMAIL, True, 0)]
+
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS) as executor:
+        while pending:
+            batch = pending
+            pending = []
+            results = executor.map(
+                fetch_user_record,
+                (item[0] for item in batch),
+            )
+            next_pending = {}
+
+            for (user_id_or_email, is_root, intermediate_levels), result in zip(
+                batch, results
+            ):
+                if result is None:
+                    logger.warning("Utilisateur introuvable : %s", user_id_or_email)
+                    continue
+
+                user_entry, direct_reports_data, is_epsilon_user = result
+                user_id = user_entry["id"]
+                if user_id in processed_ids:
+                    continue
+                processed_ids.add(user_id)
+
+                logger.info(
+                    "Traitement : %s (%s)",
+                    user_entry["identity"]["name"],
+                    user_entry["identity"]["email"],
                 )
+                if is_root or is_epsilon_user:
+                    org_data.append(user_entry)
+
+                for report in direct_reports_data:
+                    mail = report.get("mail")
+                    if not mail:
+                        continue
+                    if mail.casefold().endswith(f"@{REPORT_DOMAIN}"):
+                        next_levels = 0
+                    elif intermediate_levels < MAX_INTERMEDIATE_LEVELS:
+                        next_levels = intermediate_levels + 1
+                    else:
+                        continue
+
+                    report_id = report["id"]
+                    previous = next_pending.get(report_id)
+                    if report_id not in processed_ids and (
+                        previous is None or next_levels < previous
+                    ):
+                        next_pending[report_id] = next_levels
+
+            pending = [
+                (report_id, False, levels)
+                for report_id, levels in next_pending.items()
+            ]
+
+    return org_data
 
 
 # Lancement de la collecte à partir du point d'entrée
-fetch_hierarchy_recursive(START_USER_EMAIL, is_root=True)
+org_data = fetch_hierarchy()
 
 # --- EXPORT CSV ---
 csv_filename = f"{date_prefix}_organisation_branche.csv"
