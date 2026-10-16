@@ -7,6 +7,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
+from tkinter import ttk
 
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
@@ -25,6 +26,7 @@ ACTIVE_DIRECTORY_OUTPUT = (
     ROOT_DIRECTORY / "liste_salarie_active_directory" / "out"
 )
 SWILE_SCRIPT = ROOT_DIRECTORY / "swile_active_directory.py"
+ACTIVE_DIRECTORY_SCRIPT = ROOT_DIRECTORY / "liste_salarie_active_directory.py"
 REQUIRED_COLUMNS = {
     "swile": {"Prénom", "Nom", "Email", "Matricule"},
     "active_directory": {"Nom", "Email", "Poste"},
@@ -73,8 +75,45 @@ class CSEFileManager(TkinterDnD.Tk):
             wraplength=700,
         ).pack(anchor="w", pady=(4, 12))
 
+        self.tabs = ttk.Notebook(self)
+        self.tabs.pack(fill="both", expand=True, pady=(4, 8))
+        active_directory_tab = tk.Frame(self.tabs, padx=12, pady=12)
+        swile_tab = tk.Frame(self.tabs, padx=12, pady=12)
+        self.tabs.add(active_directory_tab, text="liste_salarie_active_directory")
+        self.tabs.add(swile_tab, text="swile_active_directory")
+
+        tk.Label(
+            active_directory_tab,
+            text=(
+                "Génère la liste des salariés depuis Microsoft Active Directory. "
+                "Une connexion Microsoft peut être demandée dans cette fenêtre."
+            ),
+            anchor="w",
+            justify="left",
+            wraplength=700,
+        ).pack(fill="x", pady=(0, 8))
+        self._create_run_button(
+            active_directory_tab,
+            "Générer la liste Active Directory",
+            "active_directory",
+        )
+        tk.Label(
+            active_directory_tab,
+            text=f"CSV créé dans : {ACTIVE_DIRECTORY_OUTPUT}",
+            anchor="w",
+            justify="left",
+            wraplength=700,
+        ).pack(fill="x", pady=(8, 0))
+        tk.Label(
+            active_directory_tab,
+            text=f"Journaux : {ROOT_DIRECTORY / 'log'}",
+            anchor="w",
+            justify="left",
+            wraplength=700,
+        ).pack(fill="x", pady=(4, 0))
+
         compare_section = tk.LabelFrame(
-            self, text="1. Comparer les listes", padx=10, pady=8
+            swile_tab, text="1. Comparer les listes", padx=10, pady=8
         )
         compare_section.pack(fill="x", pady=(4, 8))
         self._create_run_button(
@@ -84,7 +123,7 @@ class CSEFileManager(TkinterDnD.Tk):
             self._create_input_card(kind, compare_section)
 
         additions_section = tk.LabelFrame(
-            self, text="2. Préparer les ajouts Swile", padx=10, pady=8
+            swile_tab, text="2. Préparer les ajouts Swile", padx=10, pady=8
         )
         additions_section.pack(fill="x", pady=(0, 8))
         self._create_run_button(
@@ -307,6 +346,23 @@ class CSEFileManager(TkinterDnD.Tk):
         if self.is_running:
             return
         try:
+            if action == "active_directory":
+                self.is_running = True
+                self.status.set("Collecte Active Directory en cours…")
+                self._set_run_buttons_state("disabled")
+                self._set_output(
+                    "Démarrage de la collecte Active Directory…\n"
+                    "Les demandes de connexion apparaîtront ci-dessous.\n"
+                )
+                threading.Thread(
+                    target=self._run_worker,
+                    args=(
+                        [sys.executable, "-u", str(ACTIVE_DIRECTORY_SCRIPT)],
+                    ),
+                    daemon=True,
+                ).start()
+                return
+
             swile_path = self._current_file("swile")
             active_directory_path = self._current_file("active_directory")
             template_path = self._current_file("template") if action in (
@@ -357,19 +413,26 @@ class CSEFileManager(TkinterDnD.Tk):
 
     def _run_worker(self, command):
         try:
-            result = subprocess.run(
+            process = subprocess.Popen(
                 command,
                 cwd=ROOT_DIRECTORY,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                check=False,
+                bufsize=1,
             )
+            output = []
+            if process.stdout is not None:
+                for line in process.stdout:
+                    output.append(line)
+                    self.after(0, lambda text=line: self._append_output(text))
+            returncode = process.wait()
             self.after(
                 0,
                 lambda: self._finish_run(
-                    result.stdout, result.stderr, result.returncode
+                    "".join(output), "", returncode
                 ),
             )
         except OSError as error:
@@ -403,14 +466,25 @@ class CSEFileManager(TkinterDnD.Tk):
         self.output.insert("1.0", text)
         self.output.configure(state="disabled")
 
+    def _append_output(self, text):
+        self.output.configure(state="normal")
+        self.output.insert("end", text)
+        self.output.see("end")
+        self.output.configure(state="disabled")
+
     def _open_output_directory(self):
-        OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
+        output_directory = (
+            ACTIVE_DIRECTORY_OUTPUT
+            if self.tabs.index("current") == 0
+            else OUTPUT_DIRECTORY
+        )
+        output_directory.mkdir(parents=True, exist_ok=True)
         if hasattr(os, "startfile"):
-            os.startfile(OUTPUT_DIRECTORY)
+            os.startfile(output_directory)
         else:
             messagebox.showinfo(
                 "Dossier des résultats",
-                str(OUTPUT_DIRECTORY),
+                str(output_directory),
                 parent=self,
             )
 
