@@ -413,9 +413,12 @@ class CSEFileManager(TkinterDnD.Tk):
 
     def _run_worker(self, command):
         try:
+            environment = os.environ.copy()
+            environment["PYTHONIOENCODING"] = "utf-8"
             process = subprocess.Popen(
                 command,
                 cwd=ROOT_DIRECTORY,
+                env=environment,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
