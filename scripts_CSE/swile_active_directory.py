@@ -7,10 +7,6 @@ from pathlib import Path
 
 
 APPLICATION_DIRECTORY = Path(__file__).resolve().parent / "swile_active_directory"
-DEFAULT_SWILE_FILE = (
-    "collaborators-4aabb62b-ee87-4cba-a43b-9174ea1ef65f-2026-10-15.csv"
-)
-DEFAULT_ACTIVE_DIRECTORY_FILE = "20261015_liste_salarie_active_directory.csv"
 DEFAULT_TEMPLATE_FILE = (
     "collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv"
 )
@@ -27,6 +23,23 @@ DIRECTION_TITLES = {
     "president",
     "presidente",
 }
+
+
+def latest_input_file(input_directory, pattern, description):
+    candidates = list(input_directory.glob(pattern))
+    if pattern == "collaborators*.csv":
+        candidates = [
+            path
+            for path in candidates
+            if not path.stem.startswith("collaborators-additions")
+            and not path.stem.endswith(("-trouves", "-non-trouves"))
+            and path.name != DEFAULT_TEMPLATE_FILE
+        ]
+    if not candidates:
+        raise FileNotFoundError(
+            f"Aucun fichier {description} trouvé dans {input_directory}."
+        )
+    return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
 def read_csv(path, delimiter, required_columns):
@@ -271,13 +284,13 @@ def main():
     parser.add_argument(
         "--swile-file",
         type=Path,
-        default=input_directory / DEFAULT_SWILE_FILE,
+        default=None,
         help="CSV Swile dans in, séparé par des points-virgules.",
     )
     parser.add_argument(
         "--active-directory-file",
         type=Path,
-        default=input_directory / DEFAULT_ACTIVE_DIRECTORY_FILE,
+        default=None,
         help="CSV Active Directory dans in, séparé par des virgules.",
     )
     parser.add_argument(
@@ -305,10 +318,18 @@ def main():
         help="Domaine des employés à inclure (par défaut : epsilon-france.com).",
     )
     args = parser.parse_args()
+    swile_path = args.swile_file or latest_input_file(
+        input_directory, "collaborators*.csv", "Swile"
+    )
+    active_directory_path = args.active_directory_file or latest_input_file(
+        input_directory,
+        "*liste_salarie_active_directory.csv",
+        "Active Directory",
+    )
 
     if args.action in ("compare", "all"):
         found_path, not_found_path, found_count, not_found_count = compare_users(
-            args.swile_file, args.active_directory_file, args.output_directory
+            swile_path, active_directory_path, args.output_directory
         )
         print(f"Utilisateurs trouvés : {found_count} -> {found_path}")
         print(f"Utilisateurs non trouvés : {not_found_count} -> {not_found_path}")
@@ -321,8 +342,8 @@ def main():
             excluded_invalid,
             excluded_external,
         ) = generate_additions(
-            args.swile_file,
-            args.active_directory_file,
+            swile_path,
+            active_directory_path,
             args.template_file,
             args.output_file,
             args.report_domain,
