@@ -53,8 +53,8 @@ class CSEFileManager(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
         self.title("Gestion des fichiers CSE")
-        self.geometry("800x900")
-        self.minsize(680, 760)
+        self.geometry("1050x760")
+        self.minsize(820, 650)
         self.configure(padx=20, pady=16)
         self.file_labels = {}
         self.run_buttons = []
@@ -115,7 +115,10 @@ class CSEFileManager(TkinterDnD.Tk):
         compare_section = tk.LabelFrame(
             swile_tab, text="1. Comparer les listes", padx=10, pady=8
         )
-        compare_section.pack(fill="x", pady=(4, 8))
+        compare_section.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=4)
+        swile_tab.grid_columnconfigure(0, weight=1, uniform="swile_actions")
+        swile_tab.grid_columnconfigure(1, weight=1, uniform="swile_actions")
+        swile_tab.grid_rowconfigure(0, weight=1)
         self._create_run_button(
             compare_section, "Comparer les listes", "compare"
         )
@@ -125,7 +128,7 @@ class CSEFileManager(TkinterDnD.Tk):
         additions_section = tk.LabelFrame(
             swile_tab, text="2. Préparer les ajouts Swile", padx=10, pady=8
         )
-        additions_section.pack(fill="x", pady=(0, 8))
+        additions_section.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=4)
         self._create_run_button(
             additions_section, "Préparer les ajouts Swile", "additions"
         )
@@ -181,12 +184,15 @@ class CSEFileManager(TkinterDnD.Tk):
             text=INSTRUCTIONS[kind],
             anchor="w",
             justify="left",
+            wraplength=300,
         ).pack(fill="x")
         tk.Label(
             description,
             text=f"Destination : {INPUT_DIRECTORY / DESTINATIONS[kind]}",
             anchor="w",
+            justify="left",
             fg="#555555",
+            wraplength=300,
         ).pack(fill="x", pady=(3, 0))
 
         label = tk.Label(
@@ -194,6 +200,7 @@ class CSEFileManager(TkinterDnD.Tk):
             text="Aucun fichier trouvé",
             anchor="w",
             fg="#555555",
+            wraplength=300,
         )
         label.pack(fill="x", pady=(3, 0))
         self.file_labels[kind] = label
