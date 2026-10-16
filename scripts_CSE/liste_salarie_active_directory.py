@@ -22,7 +22,6 @@ required_string_settings = (
     "client_id",
     "authority",
     "report_domain",
-    "output_directory",
 )
 for setting_name in required_string_settings:
     if not isinstance(config.get(setting_name), str) or not config[setting_name].strip():
@@ -40,8 +39,11 @@ if not isinstance(scopes, list) or not scopes or not all(
         f"dans {config_path}."
     )
 
-output_dir = (config_path.parent / config["output_directory"]).resolve()
+application_directory = config_path.parent
+output_dir = application_directory / "liste_salarie_active_directory" / "out"
+log_dir = application_directory / "log"
 output_dir.mkdir(parents=True, exist_ok=True)
+log_dir.mkdir(parents=True, exist_ok=True)
 run_started_at = datetime.now()
 date_prefix = run_started_at.strftime("%Y%m%d")
 log_filename = (
@@ -52,7 +54,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
     handlers=[
-        logging.FileHandler(output_dir / log_filename, encoding="utf-8"),
+        logging.FileHandler(log_dir / log_filename, encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )

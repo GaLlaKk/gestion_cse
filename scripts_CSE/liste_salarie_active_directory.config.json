@@ -5,6 +5,5 @@
   "scopes": [
     "User.ReadBasic.All"
   ],
-  "report_domain": "epsilon-france.com",
-  "output_directory": "."
+  "report_domain": "epsilon-france.com"
 }

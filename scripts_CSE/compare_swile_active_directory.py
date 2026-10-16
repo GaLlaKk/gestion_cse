@@ -8,6 +8,7 @@ DEFAULT_SWILE_FILE = (
     "collaborators-4aabb62b-ee87-4cba-a43b-9174ea1ef65f-2026-10-15.csv"
 )
 DEFAULT_ACTIVE_DIRECTORY_FILE = "20261015_liste_salarie_active_directory.csv"
+APPLICATION_DIRECTORY = Path(__file__).resolve().parent / "compare_swile_active_directory"
 
 
 def read_csv(path, delimiter, required_columns):
@@ -127,7 +128,8 @@ def compare_users(swile_path, active_directory_path, output_directory):
 
 
 def main():
-    script_directory = Path(__file__).resolve().parent
+    input_directory = APPLICATION_DIRECTORY / "in"
+    output_directory = APPLICATION_DIRECTORY / "out"
     parser = argparse.ArgumentParser(
         description=(
             "Compare les salariés Swile avec les utilisateurs actifs "
@@ -137,23 +139,23 @@ def main():
     parser.add_argument(
         "--swile-file",
         type=Path,
-        default=script_directory / DEFAULT_SWILE_FILE,
+        default=input_directory / DEFAULT_SWILE_FILE,
         help="CSV Swile séparé par des points-virgules.",
     )
     parser.add_argument(
         "--active-directory-file",
         type=Path,
-        default=script_directory / DEFAULT_ACTIVE_DIRECTORY_FILE,
+        default=input_directory / DEFAULT_ACTIVE_DIRECTORY_FILE,
         help="CSV Active Directory séparé par des virgules.",
     )
     parser.add_argument(
         "--output-directory",
         type=Path,
-        help="Dossier des résultats (par défaut : dossier du fichier Swile).",
+        help="Dossier des résultats (par défaut : compare_swile_active_directory/out).",
     )
     args = parser.parse_args()
 
-    output_directory = args.output_directory or args.swile_file.resolve().parent
+    output_directory = args.output_directory or output_directory
     found_path, not_found_path, found_count, not_found_count = compare_users(
         args.swile_file, args.active_directory_file, output_directory
     )

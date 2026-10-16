@@ -20,6 +20,7 @@ DEFAULT_ACTIVE_DIRECTORY_FILE = "20261015_liste_salarie_active_directory.csv"
 DEFAULT_TEMPLATE_FILE = (
     "collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv"
 )
+APPLICATION_DIRECTORY = Path(__file__).resolve().parent / "generate_swile_additions"
 DIRECTION_TITLES = {
     "ceo",
     "coo",
@@ -150,7 +151,8 @@ def generate_additions(
 
 
 def main():
-    script_directory = Path(__file__).resolve().parent
+    input_directory = APPLICATION_DIRECTORY / "in"
+    output_directory = APPLICATION_DIRECTORY / "out"
     parser = argparse.ArgumentParser(
         description=(
             "Génère un CSV Swile avec les personnes de la liste "
@@ -161,27 +163,27 @@ def main():
     parser.add_argument(
         "--swile-file",
         type=Path,
-        default=script_directory / DEFAULT_SWILE_FILE,
+        default=input_directory / DEFAULT_SWILE_FILE,
         help="CSV Swile actuel, séparé par des points-virgules.",
     )
     parser.add_argument(
         "--active-directory-file",
         type=Path,
-        default=script_directory / DEFAULT_ACTIVE_DIRECTORY_FILE,
+        default=input_directory / DEFAULT_ACTIVE_DIRECTORY_FILE,
         help="CSV liste_salarie_active_directory, séparé par des virgules.",
     )
     parser.add_argument(
         "--template-file",
         type=Path,
-        default=script_directory / DEFAULT_TEMPLATE_FILE,
+        default=input_directory / DEFAULT_TEMPLATE_FILE,
         help="Modèle CSV Swile d'ajout.",
     )
     parser.add_argument(
         "--output-file",
         type=Path,
-        default=script_directory
+        default=output_directory
         / f"collaborators-additions-{date.today():%Y%m%d}.csv",
-        help="CSV de sortie (par défaut : à côté du script).",
+        help="CSV de sortie (par défaut : generate_swile_additions/out).",
     )
     parser.add_argument(
         "--report-domain",
