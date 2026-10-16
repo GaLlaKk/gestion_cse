@@ -11,7 +11,9 @@ import requests
 from msal import PublicClientApplication
 
 # --- CONFIGURATION ---
-config_path = Path(__file__).resolve().with_name("organigramme.config.json")
+config_path = Path(__file__).resolve().with_name(
+    "liste_salarie_active_directory.config.json"
+)
 with config_path.open(encoding="utf-8") as config_file:
     config = json.load(config_file)
 
@@ -42,7 +44,10 @@ output_dir = (config_path.parent / config["output_directory"]).resolve()
 output_dir.mkdir(parents=True, exist_ok=True)
 run_started_at = datetime.now()
 date_prefix = run_started_at.strftime("%Y%m%d")
-log_filename = f"{date_prefix}_{run_started_at.strftime('%H%M%S_%f')}_organigramme.log"
+log_filename = (
+    f"{date_prefix}_{run_started_at.strftime('%H%M%S_%f')}"
+    "_liste_salarie_active_directory.log"
+)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -52,7 +57,7 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
-logger.info("Démarrage de la génération de l'organigramme.")
+logger.info("Démarrage de la génération de la liste_salarie_active_directory.")
 
 START_USER_EMAIL = config["start_user_email"]
 CLIENT_ID = config["client_id"]
@@ -265,7 +270,7 @@ def fetch_hierarchy():
 org_data = fetch_hierarchy()
 
 # --- EXPORT CSV ---
-csv_filename = f"{date_prefix}_organisation_branche.csv"
+csv_filename = f"{date_prefix}_liste_salarie_active_directory.csv"
 csv_path = output_dir / csv_filename
 
 with csv_path.open("w", newline="", encoding="utf-8") as f:

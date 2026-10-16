@@ -7,7 +7,7 @@ from pathlib import Path
 DEFAULT_SWILE_FILE = (
     "collaborators-4aabb62b-ee87-4cba-a43b-9174ea1ef65f-2026-10-15.csv"
 )
-DEFAULT_ACTIVE_DIRECTORY_FILE = "20261015_organisation_branche.csv"
+DEFAULT_ACTIVE_DIRECTORY_FILE = "20261015_liste_salarie_active_directory.csv"
 
 
 def read_csv(path, delimiter, required_columns):

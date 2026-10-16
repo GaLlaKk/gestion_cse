@@ -16,7 +16,7 @@ from compare_swile_active_directory import (
 DEFAULT_SWILE_FILE = (
     "collaborators-4aabb62b-ee87-4cba-a43b-9174ea1ef65f-2026-10-15.csv"
 )
-DEFAULT_ORGANIZATION_FILE = "20261015_organisation_branche.csv"
+DEFAULT_ACTIVE_DIRECTORY_FILE = "20261015_liste_salarie_active_directory.csv"
 DEFAULT_TEMPLATE_FILE = (
     "collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv"
 )
@@ -51,7 +51,7 @@ def split_full_name(full_name):
 
 def generate_additions(
     swile_path,
-    organization_path,
+    active_directory_path,
     template_path,
     output_path,
     report_domain,
@@ -60,8 +60,8 @@ def generate_additions(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
     template_columns, _ = read_csv(template_path, ";", {"Prénom", "Nom", "Email"})
-    _, organization_users = read_csv(
-        organization_path, ",", {"Nom", "Email", "Poste"}
+    _, active_directory_users = read_csv(
+        active_directory_path, ",", {"Nom", "Email", "Poste"}
     )
 
     existing_keys = {"email": set(), "matricule": set(), "name": set()}
@@ -86,7 +86,7 @@ def generate_additions(
     seen_emails = set()
     normalized_domain = report_domain.lstrip("@").casefold()
 
-    for user in organization_users:
+    for user in active_directory_users:
         email = (user.get("Email") or "").strip()
         normalized_email = email.casefold()
         if not normalized_email.endswith(f"@{normalized_domain}"):
@@ -153,8 +153,9 @@ def main():
     script_directory = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(
         description=(
-            "Génère un CSV Swile avec les personnes de l'organigramme "
-            "absentes de la liste actuelle, hors postes de direction."
+            "Génère un CSV Swile avec les personnes de la liste "
+            "liste_salarie_active_directory absentes de la liste actuelle, "
+            "hors postes de direction."
         )
     )
     parser.add_argument(
@@ -164,10 +165,10 @@ def main():
         help="CSV Swile actuel, séparé par des points-virgules.",
     )
     parser.add_argument(
-        "--organization-file",
+        "--active-directory-file",
         type=Path,
-        default=script_directory / DEFAULT_ORGANIZATION_FILE,
-        help="CSV de l'organigramme, séparé par des virgules.",
+        default=script_directory / DEFAULT_ACTIVE_DIRECTORY_FILE,
+        help="CSV liste_salarie_active_directory, séparé par des virgules.",
     )
     parser.add_argument(
         "--template-file",
@@ -197,7 +198,7 @@ def main():
         excluded_external,
     ) = generate_additions(
         args.swile_file,
-        args.organization_file,
+        args.active_directory_file,
         args.template_file,
         args.output_file,
         args.report_domain,
