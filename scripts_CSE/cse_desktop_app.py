@@ -12,7 +12,6 @@ from tkinter import ttk
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
 from swile_active_directory import (
-    DEFAULT_TEMPLATE_FILE,
     latest_input_file,
     read_csv,
 )
@@ -32,11 +31,6 @@ REQUIRED_COLUMNS = {
     "active_directory": {"Nom", "Email", "Poste"},
     "template": {"Prénom", "Nom", "Email"},
 }
-DESTINATIONS = {
-    "swile": "collaborators_swile.csv",
-    "active_directory": "liste_salarie_active_directory.csv",
-    "template": DEFAULT_TEMPLATE_FILE,
-}
 TITLES = {
     "swile": "Liste actuelle des salariés Swile",
     "active_directory": "Export des salariés Active Directory",
@@ -46,6 +40,11 @@ INSTRUCTIONS = {
     "swile": "Déposez ici le CSV Swile actuel (séparateur « ; »).",
     "active_directory": "Déposez ici un export Active Directory (séparateur « , »).",
     "template": "Déposez ici le modèle d’import Swile (séparateur « ; »).",
+}
+DELIMITERS = {
+    "swile": ";",
+    "active_directory": ",",
+    "template": ";",
 }
 
 
@@ -188,7 +187,7 @@ class CSEFileManager(TkinterDnD.Tk):
         ).pack(fill="x")
         tk.Label(
             description,
-            text=f"Destination : {INPUT_DIRECTORY / DESTINATIONS[kind]}",
+            text=f"Destination : {INPUT_DIRECTORY} (nom d’origine conservé)",
             anchor="w",
             justify="left",
             fg="#555555",
@@ -233,23 +232,22 @@ class CSEFileManager(TkinterDnD.Tk):
             ).pack(side="right", padx=(0, 8))
 
     def _current_file(self, kind):
-        try:
-            if kind == "swile":
-                return latest_input_file(
-                    INPUT_DIRECTORY, "collaborators*.csv", "Swile"
+        required_columns = REQUIRED_COLUMNS[kind]
+        candidates = []
+        for path in INPUT_DIRECTORY.glob("*.csv"):
+            try:
+                columns, _ = read_csv(
+                    path, DELIMITERS[kind], required_columns
                 )
-            if kind == "active_directory":
-                return latest_input_file(
-                    INPUT_DIRECTORY,
-                    "*liste_salarie_active_directory.csv",
-                    "Active Directory",
-                )
-            template_path = INPUT_DIRECTORY / DEFAULT_TEMPLATE_FILE
-            if template_path.is_file():
-                return template_path
-        except FileNotFoundError:
-            return None
-        return None
+            except (OSError, UnicodeError, ValueError):
+                continue
+
+            if kind == "swile" and "Matricule" not in columns:
+                continue
+            if kind == "template" and "Matricule" in columns:
+                continue
+            candidates.append(path)
+        return max(candidates, key=lambda path: path.stat().st_mtime, default=None)
 
     def _refresh_file_labels(self):
         for kind, label in self.file_labels.items():
@@ -298,9 +296,8 @@ class CSEFileManager(TkinterDnD.Tk):
         try:
             if not source.is_file() or source.suffix.casefold() != ".csv":
                 raise ValueError("Sélectionnez un fichier CSV existant.")
-            delimiter = "," if kind == "active_directory" else ";"
-            read_csv(source, delimiter, REQUIRED_COLUMNS[kind])
-            destination = INPUT_DIRECTORY / DESTINATIONS[kind]
+            read_csv(source, DELIMITERS[kind], REQUIRED_COLUMNS[kind])
+            destination = INPUT_DIRECTORY / source.name
             INPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
 
             if source.resolve() == destination.resolve():
@@ -327,8 +324,12 @@ class CSEFileManager(TkinterDnD.Tk):
                 "export Active Directory",
             )
             delimiter = ","
-            read_csv(source, delimiter, REQUIRED_COLUMNS["active_directory"])
-            destination = INPUT_DIRECTORY / DESTINATIONS["active_directory"]
+            read_csv(
+                source,
+                DELIMITERS["active_directory"],
+                REQUIRED_COLUMNS["active_directory"],
+            )
+            destination = INPUT_DIRECTORY / source.name
             INPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
             if destination.exists() and source.resolve() != destination.resolve():
                 if not messagebox.askyesno(
