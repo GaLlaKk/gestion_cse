@@ -176,6 +176,7 @@ def generate_additions(
     template_path,
     output_path,
     report_domain,
+    ignored_output_path=None,
 ):
     _, swile_users = read_csv(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
@@ -200,6 +201,7 @@ def generate_additions(
             existing_keys["name"].add(name)
 
     additions = []
+    ignored_additions = []
     excluded_management = 0
     excluded_existing = 0
     excluded_invalid = 0
@@ -215,10 +217,6 @@ def generate_additions(
         if normalized_email.endswith(f".ext@{normalized_domain}"):
             excluded_external += 1
             continue
-        if is_direction_position(user.get("Poste")):
-            excluded_management += 1
-            continue
-
         name_parts = split_full_name(user.get("Nom"))
         if not email or name_parts is None:
             excluded_invalid += 1
@@ -242,27 +240,46 @@ def generate_additions(
             excluded_existing += 1
             continue
 
-        additions.append(
-            {
-                "Prénom": first_name,
-                "Nom": last_name,
-                "Email": email,
-            }
-        )
+        addition = {
+            "Prénom": first_name,
+            "Nom": last_name,
+            "Email": email,
+        }
+        if is_direction_position(user.get("Poste")):
+            excluded_management += 1
+            ignored_additions.append(addition)
+        else:
+            additions.append(addition)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
-        writer = csv.DictWriter(
-            csv_file,
-            fieldnames=template_columns,
-            delimiter=";",
-            extrasaction="ignore",
-        )
-        writer.writeheader()
-        writer.writerows(additions)
+    if ignored_output_path is None:
+        if "-additions" in output_path.stem:
+            ignored_stem = output_path.stem.replace(
+                "-additions", "-ignored-additions", 1
+            )
+        else:
+            ignored_stem = f"{output_path.stem}-ignored-additions"
+        ignored_output_path = output_path.with_name(f"{ignored_stem}.csv")
+    ignored_output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    for csv_path, users in (
+        (output_path, additions),
+        (ignored_output_path, ignored_additions),
+    ):
+        with csv_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
+            writer = csv.DictWriter(
+                csv_file,
+                fieldnames=template_columns,
+                delimiter=";",
+                extrasaction="ignore",
+            )
+            writer.writeheader()
+            writer.writerows(users)
 
     return (
         len(additions),
+        ignored_output_path,
+        len(ignored_additions),
         excluded_management,
         excluded_existing,
         excluded_invalid,
@@ -313,6 +330,15 @@ def main():
         help="Fichier de sortie pour les ajouts.",
     )
     parser.add_argument(
+        "--ignored-output-file",
+        type=Path,
+        default=None,
+        help=(
+            "Fichier de sortie pour les ajouts écartés (par défaut : "
+            "même dossier, avec ignored-additions dans le nom)."
+        ),
+    )
+    parser.add_argument(
         "--report-domain",
         default="epsilon-france.com",
         help="Domaine des employés à inclure (par défaut : epsilon-france.com).",
@@ -337,6 +363,8 @@ def main():
     if args.action in ("additions", "all"):
         (
             addition_count,
+            ignored_output_path,
+            ignored_addition_count,
             excluded_management,
             excluded_existing,
             excluded_invalid,
@@ -347,8 +375,13 @@ def main():
             args.template_file,
             args.output_file,
             args.report_domain,
+            args.ignored_output_file,
         )
         print(f"Ajouts à importer : {addition_count} -> {args.output_file}")
+        print(
+            f"Ajouts ignorés (postes de direction) : "
+            f"{ignored_addition_count} -> {ignored_output_path}"
+        )
         print(f"Postes de direction exclus : {excluded_management}")
         print(f"Adresses externes .ext exclues : {excluded_external}")
         print(f"Déjà présents dans Swile : {excluded_existing}")
