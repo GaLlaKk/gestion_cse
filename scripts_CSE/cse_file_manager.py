@@ -51,8 +51,8 @@ class CSEFileManager(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
         self.title("Gestion des fichiers CSE")
-        self.geometry("760x760")
-        self.minsize(650, 650)
+        self.geometry("800x900")
+        self.minsize(680, 760)
         self.configure(padx=20, pady=16)
         self.file_labels = {}
         self.run_buttons = []
@@ -73,25 +73,33 @@ class CSEFileManager(TkinterDnD.Tk):
             wraplength=700,
         ).pack(anchor="w", pady=(4, 12))
 
-        for kind in ("swile", "active_directory", "template"):
-            self._create_input_card(kind)
+        compare_section = tk.LabelFrame(
+            self, text="1. Comparer les listes", padx=10, pady=8
+        )
+        compare_section.pack(fill="x", pady=(4, 8))
+        self._create_run_button(
+            compare_section, "Comparer les listes", "compare"
+        )
+        for kind in ("swile", "active_directory"):
+            self._create_input_card(kind, compare_section)
 
-        actions = tk.LabelFrame(self, text="Traitements", padx=10, pady=8)
-        actions.pack(fill="x", pady=(10, 8))
-        for label, action in (
-            ("Comparer les listes", "compare"),
-            ("Préparer les ajouts Swile", "additions"),
-            ("Tout faire", "all"),
-        ):
-            button = tk.Button(
-                actions,
-                text=label,
-                command=lambda selected=action: self._run(selected),
-                padx=8,
-                pady=5,
-            )
-            button.pack(side="left", padx=(0, 8))
-            self.run_buttons.append(button)
+        additions_section = tk.LabelFrame(
+            self, text="2. Préparer les ajouts Swile", padx=10, pady=8
+        )
+        additions_section.pack(fill="x", pady=(0, 8))
+        self._create_run_button(
+            additions_section, "Préparer les ajouts Swile", "additions"
+        )
+        tk.Label(
+            additions_section,
+            text=(
+                "Cette étape réutilise les listes Swile et Active Directory "
+                "sélectionnées ci-dessus."
+            ),
+            anchor="w",
+            justify="left",
+        ).pack(fill="x", pady=(2, 4))
+        self._create_input_card("template", additions_section)
 
         footer = tk.Frame(self)
         footer.pack(fill="x", pady=(0, 8))
@@ -112,8 +120,19 @@ class CSEFileManager(TkinterDnD.Tk):
         self.output.pack(fill="both", expand=True, pady=(3, 0))
         self._refresh_file_labels()
 
-    def _create_input_card(self, kind):
-        card = tk.LabelFrame(self, text=TITLES[kind], padx=10, pady=7)
+    def _create_run_button(self, parent, label, action):
+        button = tk.Button(
+            parent,
+            text=label,
+            command=lambda selected=action: self._run(selected),
+            padx=8,
+            pady=5,
+        )
+        button.pack(anchor="w", pady=(0, 4))
+        self.run_buttons.append(button)
+
+    def _create_input_card(self, kind, parent):
+        card = tk.LabelFrame(parent, text=TITLES[kind], padx=10, pady=7)
         card.pack(fill="x", pady=4)
 
         description = tk.Frame(card)
@@ -187,17 +206,26 @@ class CSEFileManager(TkinterDnD.Tk):
         return None
 
     def _refresh_file_labels(self):
-        missing = []
         for kind, label in self.file_labels.items():
             path = self._current_file(kind)
             if path is None:
                 label.configure(text="Aucun fichier trouvé dans in", fg="#a33")
-                missing.append(TITLES[kind])
             else:
                 label.configure(text=f"Prêt : {path.name}", fg="#176b35")
 
-        if missing:
-            self.status.set(f"Fichier(s) à fournir : {', '.join(missing)}")
+        missing_main_inputs = [
+            TITLES[kind]
+            for kind in ("swile", "active_directory")
+            if self._current_file(kind) is None
+        ]
+        if missing_main_inputs:
+            self.status.set(
+                f"Fichier(s) requis pour comparer : {', '.join(missing_main_inputs)}"
+            )
+        elif self._current_file("template") is None:
+            self.status.set(
+                "Comparaison prête; ajoutez le modèle pour préparer les ajouts."
+            )
         else:
             self.status.set("Tous les fichiers nécessaires sont prêts.")
 
@@ -281,11 +309,10 @@ class CSEFileManager(TkinterDnD.Tk):
         try:
             swile_path = self._current_file("swile")
             active_directory_path = self._current_file("active_directory")
-            template_path = (
-                self._current_file("template")
-                if action in ("additions", "all")
-                else None
-            )
+            template_path = self._current_file("template") if action in (
+                "additions",
+                "all",
+            ) else None
             missing = [
                 label
                 for path, label in (
