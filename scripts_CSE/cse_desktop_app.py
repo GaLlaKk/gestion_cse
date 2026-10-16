@@ -12,7 +12,6 @@ from tkinter import ttk
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
 from swile_active_directory import (
-    latest_input_file,
     read_csv,
 )
 
@@ -232,9 +231,17 @@ class CSEFileManager(TkinterDnD.Tk):
             ).pack(side="right", padx=(0, 8))
 
     def _current_file(self, kind):
+        return max(
+            self._files_of_kind(INPUT_DIRECTORY, kind),
+            key=lambda path: path.stat().st_mtime,
+            default=None,
+        )
+
+    @staticmethod
+    def _files_of_kind(directory, kind):
         required_columns = REQUIRED_COLUMNS[kind]
         candidates = []
-        for path in INPUT_DIRECTORY.glob("*.csv"):
+        for path in directory.glob("*.csv"):
             try:
                 columns, _ = read_csv(
                     path, DELIMITERS[kind], required_columns
@@ -247,7 +254,7 @@ class CSEFileManager(TkinterDnD.Tk):
             if kind == "template" and "Matricule" in columns:
                 continue
             candidates.append(path)
-        return max(candidates, key=lambda path: path.stat().st_mtime, default=None)
+        return candidates
 
     def _refresh_file_labels(self):
         for kind, label in self.file_labels.items():
@@ -318,12 +325,15 @@ class CSEFileManager(TkinterDnD.Tk):
 
     def _copy_latest_active_directory(self):
         try:
-            source = latest_input_file(
-                ACTIVE_DIRECTORY_OUTPUT,
-                "*_liste_salarie_active_directory.csv",
-                "export Active Directory",
+            candidates = self._files_of_kind(
+                ACTIVE_DIRECTORY_OUTPUT, "active_directory"
             )
-            delimiter = ","
+            if not candidates:
+                raise FileNotFoundError(
+                    "Aucun export Active Directory valide trouvé dans "
+                    f"{ACTIVE_DIRECTORY_OUTPUT}."
+                )
+            source = max(candidates, key=lambda path: path.stat().st_mtime)
             read_csv(
                 source,
                 DELIMITERS["active_directory"],
