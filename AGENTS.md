@@ -76,9 +76,10 @@ fichier/traitement pour le flux Swile.
   demande explicite ; éviter notamment un `git add` global.
 - Aucun test automatisé n’a été repéré lors de la création de ce contexte.
   Les tests unitaires sont maintenant dans `tests/` et se lancent avec
-  `python -m unittest discover -s tests -v`. Pour une modification Python
-  ciblée, `python -m py_compile` sur le script concerné est une vérification
-  minimale, pas un substitut à ces tests.
+  `python -m unittest discover -s tests -v`. Ils couvrent normalisation,
+  rapprochements, règles d’ajout, chemins d’exécution et services CSV.
+  Pour une modification Python ciblée, `python -m py_compile` sur le script
+  concerné est une vérification minimale, pas un substitut à ces tests.
 
 ## Historique de contexte
 
