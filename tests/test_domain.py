@@ -14,6 +14,24 @@ class NormalizationTests(unittest.TestCase):
 
 
 class MatchingTests(unittest.TestCase):
+    def test_match_swile_matricule_against_active_directory_identifiant(self):
+        swile_user = {
+            "Prénom": "Alice",
+            "Nom": "Martin",
+            "Email": "swile@example.com",
+            "Matricule": " AB-12 ",
+        }
+        active_directory_user = {
+            "Nom": "Different Person",
+            "Email": "ad@example.com",
+            "Identifiant": "ab12",
+        }
+
+        found, missing = compare_users([swile_user], [active_directory_user])
+
+        self.assertEqual(found, [swile_user])
+        self.assertEqual(missing, [])
+
     def test_match_uses_email_matricule_or_name(self):
         swile_users = [
             {
