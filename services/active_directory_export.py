@@ -1,6 +1,7 @@
 import csv
 import json
 import logging
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -11,6 +12,41 @@ import requests
 from msal import PublicClientApplication
 
 from services.paths import project_root
+
+
+def _download_user_photo(user_id, identifier, photo_directory, request_graph):
+    safe_identifier = "".join(
+        "_" if character in '<>:"/\\|?*' else character
+        for character in (identifier or "inconnu")
+    ).rstrip(" .")
+    photo_path = photo_directory / f"{safe_identifier}_{user_id}.jpg"
+    if photo_path.is_file() and photo_path.stat().st_size > 0:
+        return photo_path
+
+    response = request_graph(
+        f"https://graph.microsoft.com/v1.0/users/{user_id}/photo/$value"
+    )
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    if not response.content:
+        raise ValueError(f"La photo de l’utilisateur {user_id} est vide.")
+
+    photo_directory.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=photo_directory,
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(response.content)
+        temporary_path.replace(photo_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    return photo_path
 
 
 def get_config_path():
@@ -256,6 +292,19 @@ def run_active_directory_export(on_device_code=None):
                     if (is_root or is_epsilon_user) and not is_external_epsilon_email(
                         user_entry["identity"]["email"]
                     ):
+                        try:
+                            _download_user_photo(
+                                user_id,
+                                user_entry["identity"]["username"],
+                                output_dir / "photos",
+                                request_graph,
+                            )
+                        except requests.HTTPError:
+                            logger.exception(
+                                "Impossible de récupérer la photo de "
+                                "l’utilisateur %s.",
+                                user_id,
+                            )
                         org_data.append(user_entry)
 
                     for report in direct_reports_data:

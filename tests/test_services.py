@@ -11,6 +11,59 @@ from services.swile_service import compare_users, generate_additions
 
 
 class ActiveDirectoryExportTests(unittest.TestCase):
+    def test_photo_is_downloaded_once_and_reused_from_cache(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            photo_directory = Path(temporary_directory) / "photos"
+            response = Mock(status_code=200, content=b"photo-bytes")
+            response.raise_for_status.return_value = None
+            request_graph = Mock(return_value=response)
+
+            photo_path = active_directory_export._download_user_photo(
+                "user-id", "jdupont", photo_directory, request_graph
+            )
+            cached_path = active_directory_export._download_user_photo(
+                "user-id", "jdupont", photo_directory, request_graph
+            )
+
+            self.assertEqual(
+                photo_path, photo_directory / "jdupont_user-id.jpg"
+            )
+            self.assertEqual(cached_path, photo_path)
+            self.assertEqual(photo_path.read_bytes(), b"photo-bytes")
+            request_graph.assert_called_once_with(
+                "https://graph.microsoft.com/v1.0/users/user-id/photo/$value"
+            )
+
+    def test_missing_photo_is_not_written(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            photo_directory = Path(temporary_directory) / "photos"
+            response = Mock(status_code=404)
+            request_graph = Mock(return_value=response)
+
+            photo_path = active_directory_export._download_user_photo(
+                "user-id", "jdupont", photo_directory, request_graph
+            )
+
+            self.assertIsNone(photo_path)
+            self.assertFalse(photo_directory.exists())
+            request_graph.assert_called_once()
+
+    def test_photo_filename_sanitizes_windows_path_characters(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            photo_directory = Path(temporary_directory) / "photos"
+            response = Mock(status_code=200, content=b"photo-bytes")
+            response.raise_for_status.return_value = None
+            request_graph = Mock(return_value=response)
+
+            photo_path = active_directory_export._download_user_photo(
+                "user-id",
+                "user/name",
+                photo_directory,
+                request_graph,
+            )
+
+            self.assertEqual(photo_path.name, "user_name_user-id.jpg")
+
     def test_device_code_is_forwarded_to_callback(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             config_path = Path(temporary_directory) / "config.json"

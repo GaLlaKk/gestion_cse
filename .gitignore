@@ -8,3 +8,5 @@
 !**/*config*.json
 !**/*template*.json
 *.jsonl
+**/photos/*.jpg
+**/photos/*.jpeg
