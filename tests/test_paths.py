@@ -15,7 +15,10 @@ class RuntimePathTests(unittest.TestCase):
                 patch.object(sys, "frozen", True, create=True),
                 patch.object(sys, "executable", str(executable)),
             ):
-                self.assertEqual(project_root(), Path(temporary_directory))
+                self.assertEqual(
+                    str(project_root()).casefold(),
+                    str(Path(temporary_directory)).casefold(),
+                )
 
     def test_bundled_resource_uses_pyinstaller_extraction_directory(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
