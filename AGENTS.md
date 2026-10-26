@@ -10,51 +10,53 @@ de secrets, de données personnelles ni de détails propres à une exécution.
 Le dépôt regroupe plusieurs outils, dont `paiements`, `swile` et `validation`.
 Le projet CSE suivi par Git est actuellement à la racine du dépôt, avec les
 répertoires `swile_active_directory`, `liste_salarie_active_directory`, `debug`,
-`log` et les scripts Python à la racine. Les scripts sont conçus pour rester
-compatibles avec les anciens emplacements `swile/` et le nouveau layout racine.
+`log`, et les packages `app`, `domain` et `services`. Les scripts Python à la
+racine sont des points d’entrée conservés pour lancer les traitements.
 
-- `liste_salarie_active_directory.py` récupère des informations Microsoft Graph
-  à partir de sa configuration JSON, puis génère un export CSV.
-- `swile_active_directory.py` compare l’export AD à un export Swile et peut
-  produire des fichiers d’ajouts et d’ajouts ignorés.
-- `cse_desktop_app.py` fournit l’interface Tkinter pour lancer ces traitements
-  et choisir les fichiers d’entrée.
+- `services/active_directory_export.py` récupère les informations Microsoft
+  Graph et génère l’export CSV; `liste_salarie_active_directory.py` est son
+  point d’entrée.
+- `domain/matching.py` compare l’export AD à l’export Swile.
+- `domain/swile_additions.py` prépare les fichiers d’ajouts et d’ajouts ignorés.
+- `app/ui/cse_desktop_app.py` fournit l’interface Tkinter.
+- `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
+- `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
 - `run_cse_desktop_app.ps1` lance l’application avec l’interpréteur local
   `.venv/Scripts/python.exe`; `debug/debug_deploy.ps1` crée cet environnement
   et installe `requirements.txt`.
 
 Les fichiers CSV sont généralement générés dans les dossiers `in` et `out`
-propres aux flux. Les scripts résolvent leurs chemins à partir du dossier du
-script et détectent automatiquement la racine du projet, ce qui évite les
-références cassées après les mouvements de fichiers.
+propres aux flux. `services/csv_files.py` centralise leur lecture et la
+sélection des fichiers d’entrée; `services/swile_service.py` gère les échanges
+fichier/traitement pour le flux Swile.
 
 ## Repères — flux Swile / Active Directory
 
-- `swile_active_directory.py`
+- `services/csv_files.py`
   - `read_csv` vérifie les colonnes requises et gère les fichiers CSV avec
     l’encodage `utf-8-sig`.
+- `domain/matching.py`
   - Les exports Swile utilisent `;` et contiennent `Prénom`, `Nom`, `Email` et
     `Matricule`. L’export Active Directory utilise `,` et les champs `Nom`,
     `Email`, `Identifiant`, `Poste`. `Identifiant` est le login avant `@` du
     `userPrincipalName` renvoyé par Microsoft Graph.
-  - `compare_users` écrit les fichiers `*-trouves.csv` et
-    `*-non-trouves.csv`.
-  - `generate_additions` prend les colonnes du modèle Swile, ajoute
-    `Matricule` si elle manque, puis produit le fichier d’ajouts et celui des
-    ajouts ignorés (postes de direction).
+  - `compare_users` compare des lignes en mémoire; l’écriture des résultats est
+    prise en charge par `services/swile_service.py`.
+- `domain/swile_additions.py`
+  - `build_additions` applique les règles métier en mémoire; le service écrit
+    les fichiers d’ajouts et d’ajouts ignorés.
+- `domain/normalization.py`
   - `active_directory_keys` normalise le login de `Identifiant` pour les
-    rapprochements. `generate_additions` écrit le login d’origine (sans
-    normalisation) dans `Matricule`; le nom complet reste une clé de
-    rapprochement distincte.
+    rapprochements. L’export garde le login original dans `Matricule`; le nom
+    complet reste une clé de rapprochement distincte.
   - Les clés de rapprochement existantes sont l’email, le matricule normalisé
     et le nom normalisé. Les exclusions comprennent les comptes externes
     `.ext`, les doublons et certains postes de direction.
-- `cse_desktop_app.py` porte les colonnes requises et les délimiteurs affichés
-  par l’interface ; garder ces paramètres cohérents si le format d’entrée
-  change.
-- `liste_salarie_active_directory.config.json` est la configuration lue par le
-  script AD. Ne jamais recopier ses valeurs sensibles dans ce document ni dans
-  les réponses.
+- `app/ui/cse_desktop_app.py` porte les colonnes requises et les délimiteurs
+  affichés par l’interface; les garder cohérents si le format d’entrée change.
+- `services/active_directory_export.py` lit
+  `liste_salarie_active_directory.config.json`. Ne jamais recopier les valeurs
+  sensibles de cette configuration dans ce document ni dans les réponses.
 - `requirements.txt` liste les dépendances Python, dont `requests`, `msal` et
   `tkinterdnd2`.
 
@@ -82,5 +84,5 @@ références cassées après les mouvements de fichiers.
   comparaison normalise ce login, tandis que le fichier d’ajouts conserve sa
   valeur d’origine.
 - 2026-10-26 : le projet a été déplacé hors du dossier `swile/` vers la racine
-  du dépôt. Les scripts sont maintenant robustes aux layouts anciens et
-  nouveaux grâce à une détection automatique de la racine du projet.
+  du dépôt, puis réorganisé en packages `app`, `domain` et `services`. Les
+  wrappers Python à la racine préservent les commandes de lancement existantes.
