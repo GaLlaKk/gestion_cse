@@ -1,8 +1,82 @@
 import csv
+from datetime import date
 
 from domain.matching import compare_users as match_users
 from domain.swile_additions import build_additions
-from services.csv_files import read_csv
+from services.csv_files import DEFAULT_TEMPLATE_FILE, read_csv
+from services.paths import bundled_resource, project_root
+
+
+def execute_swile_action(
+    action,
+    swile_path,
+    active_directory_path,
+    template_path=None,
+    output_directory=None,
+    output_path=None,
+    ignored_output_path=None,
+    report_domain="epsilon-france.com",
+):
+    root = project_root()
+    output_directory = output_directory or (
+        root / "swile_active_directory" / "out"
+    )
+    output_path = output_path or (
+        output_directory / f"collaborators-additions-{date.today():%Y%m%d}.csv"
+    )
+    results = []
+
+    if action in ("compare", "all"):
+        found_path, not_found_path, found_count, not_found_count = compare_users(
+            swile_path, active_directory_path, output_directory
+        )
+        results.extend(
+            (
+                f"Utilisateurs trouvés : {found_count} -> {found_path}",
+                f"Utilisateurs non trouvés : {not_found_count} -> {not_found_path}",
+            )
+        )
+
+    if action in ("additions", "all"):
+        template_path = template_path or (
+            root / "swile_active_directory" / "in" / DEFAULT_TEMPLATE_FILE
+        )
+        if not template_path.exists():
+            template_path = bundled_resource(
+                "swile_active_directory", "in", DEFAULT_TEMPLATE_FILE
+            )
+        (
+            addition_count,
+            ignored_path,
+            ignored_count,
+            excluded_management,
+            excluded_existing,
+            excluded_invalid,
+            excluded_external,
+        ) = generate_additions(
+            swile_path,
+            active_directory_path,
+            template_path,
+            output_path,
+            report_domain,
+            ignored_output_path,
+        )
+        results.extend(
+            (
+                f"Ajouts à importer : {addition_count} -> {output_path}",
+                "Ajouts ignorés (postes de direction) : "
+                f"{ignored_count} -> {ignored_path}",
+                f"Postes de direction exclus : {excluded_management}",
+                f"Adresses externes .ext exclues : {excluded_external}",
+                f"Déjà présents dans Swile : {excluded_existing}",
+            )
+        )
+        if excluded_invalid:
+            results.append(
+                f"Lignes ignorées faute de nom exploitable : {excluded_invalid}"
+            )
+
+    return "\n".join(results)
 
 
 def compare_users(swile_path, active_directory_path, output_directory):

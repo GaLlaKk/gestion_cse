@@ -21,6 +21,9 @@ racine sont des points d’entrée conservés pour lancer les traitements.
 - `app/ui/cse_desktop_app.py` fournit l’interface Tkinter.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
+- `.github/workflows/build-windows-exe.yml` exécute les tests unitaires avant
+  de construire l’exécutable Windows; l’artefact inclut le modèle Swile, mais
+  pas la configuration Active Directory.
 - `run_cse_desktop_app.ps1` lance l’application avec l’interpréteur local
   `.venv/Scripts/python.exe`; `debug/debug_deploy.ps1` crée cet environnement
   et installe `requirements.txt`.
@@ -72,10 +75,10 @@ fichier/traitement pour le flux Swile.
   non suivis. Ne pas les supprimer, les écraser ni les ajouter au dépôt sans
   demande explicite ; éviter notamment un `git add` global.
 - Aucun test automatisé n’a été repéré lors de la création de ce contexte.
-  Vérifier les tests et les commandes disponibles avant de conclure qu’ils
-  n’existent pas. Pour une modification Python ciblée, `python -m py_compile`
-  sur le script concerné est une vérification minimale, pas un substitut à des
-  tests fonctionnels.
+  Les tests unitaires sont maintenant dans `tests/` et se lancent avec
+  `python -m unittest discover -s tests -v`. Pour une modification Python
+  ciblée, `python -m py_compile` sur le script concerné est une vérification
+  minimale, pas un substitut à ces tests.
 
 ## Historique de contexte
 

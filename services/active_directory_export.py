@@ -10,12 +10,11 @@ from pathlib import Path
 import requests
 from msal import PublicClientApplication
 
+from services.paths import project_root
+
 
 def get_config_path():
-    return (
-        Path(__file__).resolve().parents[1]
-        / "liste_salarie_active_directory.config.json"
-    )
+    return project_root() / "liste_salarie_active_directory.config.json"
 
 
 def initialize_output(config_path):

@@ -1,11 +1,11 @@
 import argparse
-from datetime import date
 from pathlib import Path
 
 from services.csv_files import DEFAULT_TEMPLATE_FILE, latest_input_file
-from services.swile_service import compare_users, generate_additions
+from services.paths import project_root
+from services.swile_service import execute_swile_action
 
-ROOT_DIRECTORY = Path(__file__).resolve().parents[2]
+ROOT_DIRECTORY = project_root()
 APPLICATION_DIRECTORY = ROOT_DIRECTORY / "swile_active_directory"
 
 
@@ -47,8 +47,7 @@ def main():
     parser.add_argument(
         "--output-file",
         type=Path,
-        default=output_directory
-        / f"collaborators-additions-{date.today():%Y%m%d}.csv",
+        default=None,
         help="Fichier de sortie pour les ajouts.",
     )
     parser.add_argument(
@@ -75,40 +74,18 @@ def main():
         "Active Directory",
     )
 
-    if args.action in ("compare", "all"):
-        found_path, not_found_path, found_count, not_found_count = compare_users(
-            swile_path, active_directory_path, args.output_directory
-        )
-        print(f"Utilisateurs trouvés : {found_count} -> {found_path}")
-        print(f"Utilisateurs non trouvés : {not_found_count} -> {not_found_path}")
-
-    if args.action in ("additions", "all"):
-        (
-            addition_count,
-            ignored_output_path,
-            ignored_addition_count,
-            excluded_management,
-            excluded_existing,
-            excluded_invalid,
-            excluded_external,
-        ) = generate_additions(
+    print(
+        execute_swile_action(
+            args.action,
             swile_path,
             active_directory_path,
-            args.template_file,
-            args.output_file,
-            args.report_domain,
-            args.ignored_output_file,
+            template_path=args.template_file,
+            output_directory=args.output_directory,
+            output_path=args.output_file,
+            ignored_output_path=args.ignored_output_file,
+            report_domain=args.report_domain,
         )
-        print(f"Ajouts à importer : {addition_count} -> {args.output_file}")
-        print(
-            f"Ajouts ignorés (postes de direction) : "
-            f"{ignored_addition_count} -> {ignored_output_path}"
-        )
-        print(f"Postes de direction exclus : {excluded_management}")
-        print(f"Adresses externes .ext exclues : {excluded_external}")
-        print(f"Déjà présents dans Swile : {excluded_existing}")
-        if excluded_invalid:
-            print(f"Lignes ignorées faute de nom exploitable : {excluded_invalid}")
+    )
 
 
 if __name__ == "__main__":

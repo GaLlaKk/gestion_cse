@@ -1,9 +1,9 @@
 import os
 import shutil
-import subprocess
-import sys
 import threading
 import tkinter as tk
+import traceback
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
@@ -12,18 +12,19 @@ from tkinter import ttk
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
 from services.csv_files import read_csv
+from services.paths import bundled_resource, project_root
+from services.swile_service import execute_swile_action
+from services.active_directory_export import run_active_directory_export
 
-ROOT_DIRECTORY = Path(__file__).resolve().parents[2]
+ROOT_DIRECTORY = project_root()
 SWILE_DIRECTORY = ROOT_DIRECTORY / "swile_active_directory"
 INPUT_DIRECTORY = SWILE_DIRECTORY / "in"
 OUTPUT_DIRECTORY = SWILE_DIRECTORY / "out"
 ACTIVE_DIRECTORY_OUTPUT = ROOT_DIRECTORY / "liste_salarie_active_directory" / "out"
-SWILE_SCRIPT = ROOT_DIRECTORY / "swile_active_directory.py"
-ACTIVE_DIRECTORY_SCRIPT = ROOT_DIRECTORY / "liste_salarie_active_directory.py"
 REQUIRED_COLUMNS = {
     "swile": {"Prénom", "Nom", "Email", "Matricule"},
     "active_directory": {"Nom", "Email", "Identifiant", "Poste"},
-    "template": {"Prénom", "Nom", "Email"},
+    "template": {"Prénom", "Nom", "Email", "Matricule"},
 }
 TITLES = {
     "swile": "Liste actuelle des salariés Swile",
@@ -40,6 +41,27 @@ DELIMITERS = {
     "active_directory": ",",
     "template": ";",
 }
+DEFAULT_TEMPLATE_FILE = (
+    "collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv"
+)
+
+
+class _OutputWriter:
+    def __init__(self, app):
+        self.app = app
+        self.parts = []
+
+    def write(self, text):
+        if text:
+            self.parts.append(text)
+            self.app.after(0, self.app._append_output, text)
+        return len(text)
+
+    def flush(self):
+        pass
+
+    def getvalue(self):
+        return "".join(self.parts)
 
 
 class CSEFileManager(TkinterDnD.Tk):
@@ -246,9 +268,13 @@ class CSEFileManager(TkinterDnD.Tk):
 
             if kind == "swile" and "Matricule" not in columns:
                 continue
-            if kind == "template" and "Matricule" in columns:
-                continue
             candidates.append(path)
+        if kind == "template":
+            bundled_template = bundled_resource(
+                "swile_active_directory", "in", DEFAULT_TEMPLATE_FILE
+            )
+            if not candidates and bundled_template.is_file():
+                candidates.append(bundled_template)
         return candidates
 
     def _refresh_file_labels(self):
@@ -369,9 +395,7 @@ class CSEFileManager(TkinterDnD.Tk):
                 )
                 threading.Thread(
                     target=self._run_worker,
-                    args=(
-                        [sys.executable, "-u", str(ACTIVE_DIRECTORY_SCRIPT)],
-                    ),
+                    args=(action, None, None, None),
                     daemon=True,
                 ).start()
                 return
@@ -401,58 +425,42 @@ class CSEFileManager(TkinterDnD.Tk):
                 )
                 return
 
-            command = [
-                sys.executable,
-                str(SWILE_SCRIPT),
-                action,
-                "--swile-file",
-                str(swile_path),
-                "--active-directory-file",
-                str(active_directory_path),
-            ]
-            if template_path is not None:
-                command.extend(("--template-file", str(template_path)))
             self.is_running = True
             self.status.set("Traitement en cours…")
             self._set_run_buttons_state("disabled")
             self._set_output("Traitement en cours…\n")
             threading.Thread(
                 target=self._run_worker,
-                args=(command,),
+                args=(action, swile_path, active_directory_path, template_path),
                 daemon=True,
             ).start()
         except OSError as error:
             self._finish_run("", str(error), 1)
 
-    def _run_worker(self, command):
+    def _run_worker(
+        self, action, swile_path, active_directory_path, template_path
+    ):
+        output_writer = _OutputWriter(self)
         try:
-            environment = os.environ.copy()
-            environment["PYTHONIOENCODING"] = "utf-8"
-            process = subprocess.Popen(
-                command,
-                cwd=ROOT_DIRECTORY,
-                env=environment,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-            )
-            output = []
-            if process.stdout is not None:
-                for line in process.stdout:
-                    output.append(line)
-                    self.after(0, lambda text=line: self._append_output(text))
-            returncode = process.wait()
+            with redirect_stdout(output_writer), redirect_stderr(output_writer):
+                if action == "active_directory":
+                    run_active_directory_export()
+                else:
+                    result = execute_swile_action(
+                        action,
+                        swile_path,
+                        active_directory_path,
+                        template_path=template_path,
+                    )
+                    print(result)
             self.after(
                 0,
-                lambda: self._finish_run(
-                    "".join(output), "", returncode
-                ),
+                lambda: self._finish_run(output_writer.getvalue(), "", 0),
             )
-        except OSError as error:
-            self.after(0, lambda: self._finish_run("", str(error), 1))
+        except Exception:
+            error = traceback.format_exc()
+            output_writer.write(error)
+            self.after(0, lambda message=error: self._finish_run("", message, 1))
 
     def _finish_run(self, stdout, stderr, returncode):
         self.is_running = False
