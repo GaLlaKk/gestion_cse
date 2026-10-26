@@ -7,24 +7,29 @@ de secrets, de données personnelles ni de détails propres à une exécution.
 
 ## Vue d’ensemble
 
-Le dépôt regroupe plusieurs outils Python, organisés par usage : `analyse`,
-`conversion`, `experiences`, `paiements`, `scripts_CSE` et `validation`.
-L’application `scripts_CSE` contient deux flux liés :
+Le dépôt regroupe plusieurs outils, dont `paiements`, `swile` et `validation`.
+Le projet CSE suivi par Git se trouve dans `swile` et contient deux flux liés :
 
-- `liste_salarie_active_directory.py` récupère des informations Microsoft
+- `swile/liste_salarie_active_directory.py` récupère des informations Microsoft
   Graph à partir de sa configuration JSON, puis génère un export CSV.
-- `swile_active_directory.py` compare l’export AD à un export Swile et peut
+- `swile/swile_active_directory.py` compare l’export AD à un export Swile et peut
   produire des fichiers d’ajouts et d’ajouts ignorés.
-- `cse_desktop_app.py` fournit l’interface Tkinter pour lancer ces traitements
+- `swile/cse_desktop_app.py` fournit l’interface Tkinter pour lancer ces traitements
   et choisir les fichiers d’entrée.
+- `swile/run_cse_desktop_app.ps1` lance l’application avec l’interpréteur
+  local `swile/.venv/Scripts/python.exe`; `swile/debug/debug_deploy.ps1`
+  crée cet environnement et installe `swile/requirements.txt`. Un
+  environnement présent dans un autre répertoire (par exemple `scripts_CSE`)
+  ne satisfait pas cette vérification.
 
 Les fichiers CSV sont généralement générés dans les dossiers `in` et `out`
 propres aux flux. Les scripts résolvent leurs chemins à partir de leur propre
-emplacement.
+emplacement. Un dossier local `scripts_CSE`, s’il est présent, ne remplace pas
+le projet suivi sous `swile`.
 
 ## Repères — flux Swile / Active Directory
 
-- `scripts_CSE/swile_active_directory.py`
+- `swile/swile_active_directory.py`
   - `read_csv` vérifie les colonnes requises et gère les fichiers CSV avec
     l’encodage `utf-8-sig`.
   - Les exports Swile utilisent `;` et contiennent `Prénom`, `Nom`, `Email` et
@@ -43,13 +48,13 @@ emplacement.
   - Les clés de rapprochement existantes sont l’email, le matricule normalisé
     et le nom normalisé. Les exclusions comprennent les comptes externes
     `.ext`, les doublons et certains postes de direction.
-- `scripts_CSE/cse_desktop_app.py` porte les colonnes requises et les
+- `swile/cse_desktop_app.py` porte les colonnes requises et les
   délimiteurs affichés par l’interface ; garder ces paramètres cohérents si
   le format d’entrée change.
-- `scripts_CSE/liste_salarie_active_directory.config.json` est la configuration
+- `swile/liste_salarie_active_directory.config.json` est la configuration
   lue par le script AD. Ne jamais recopier ses valeurs sensibles dans ce
   document ni dans les réponses.
-- `scripts_CSE/requirements.txt` liste les dépendances Python, dont `requests`,
+- `swile/requirements.txt` liste les dépendances Python, dont `requests`,
   `msal` et `tkinterdnd2`.
 
 ## Pratiques de travail
