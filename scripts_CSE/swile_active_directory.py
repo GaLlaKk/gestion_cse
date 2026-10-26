@@ -87,13 +87,7 @@ def normalize_name(value):
 def active_directory_keys(user):
     email = (user.get("Email") or "").strip().casefold()
     full_name = (user.get("Nom") or "").strip()
-    name_parts = full_name.split()
-
-    matricule = ""
-    if len(name_parts) >= 2:
-        first_name = name_parts[0]
-        last_name = "".join(name_parts[1:])
-        matricule = normalize_matricule(f"{last_name}_{first_name}")
+    matricule = normalize_matricule(user.get("Identifiant") or "")
 
     return {
         "email": email,
@@ -182,8 +176,10 @@ def generate_additions(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
     template_columns, _ = read_csv(template_path, ";", {"Prénom", "Nom", "Email"})
+    if "Matricule" not in template_columns:
+        template_columns.append("Matricule")
     _, active_directory_users = read_csv(
-        active_directory_path, ",", {"Nom", "Email", "Poste"}
+        active_directory_path, ",", {"Nom", "Email", "Identifiant", "Poste"}
     )
 
     existing_keys = {"email": set(), "matricule": set(), "name": set()}
@@ -244,6 +240,7 @@ def generate_additions(
             "Prénom": first_name,
             "Nom": last_name,
             "Email": email,
+            "Matricule": (user.get("Identifiant") or "").strip(),
         }
         if is_direction_position(user.get("Poste")):
             excluded_management += 1

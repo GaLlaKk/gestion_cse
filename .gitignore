@@ -1,2 +1,7 @@
 .venv
 *.pyc
+*.log
+*.csv
+!**/*template*.csv
+*.json
+*.jsonl

@@ -27,7 +27,7 @@ SWILE_SCRIPT = ROOT_DIRECTORY / "swile_active_directory.py"
 ACTIVE_DIRECTORY_SCRIPT = ROOT_DIRECTORY / "liste_salarie_active_directory.py"
 REQUIRED_COLUMNS = {
     "swile": {"Prénom", "Nom", "Email", "Matricule"},
-    "active_directory": {"Nom", "Email", "Poste"},
+    "active_directory": {"Nom", "Email", "Identifiant", "Poste"},
     "template": {"Prénom", "Nom", "Email"},
 }
 TITLES = {
