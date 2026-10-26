@@ -8,28 +8,29 @@ de secrets, de données personnelles ni de détails propres à une exécution.
 ## Vue d’ensemble
 
 Le dépôt regroupe plusieurs outils, dont `paiements`, `swile` et `validation`.
-Le projet CSE suivi par Git se trouve dans `swile` et contient deux flux liés :
+Le projet CSE suivi par Git est actuellement à la racine du dépôt, avec les
+répertoires `swile_active_directory`, `liste_salarie_active_directory`, `debug`,
+`log` et les scripts Python à la racine. Les scripts sont conçus pour rester
+compatibles avec les anciens emplacements `swile/` et le nouveau layout racine.
 
-- `swile/liste_salarie_active_directory.py` récupère des informations Microsoft
-  Graph à partir de sa configuration JSON, puis génère un export CSV.
-- `swile/swile_active_directory.py` compare l’export AD à un export Swile et peut
+- `liste_salarie_active_directory.py` récupère des informations Microsoft Graph
+  à partir de sa configuration JSON, puis génère un export CSV.
+- `swile_active_directory.py` compare l’export AD à un export Swile et peut
   produire des fichiers d’ajouts et d’ajouts ignorés.
-- `swile/cse_desktop_app.py` fournit l’interface Tkinter pour lancer ces traitements
+- `cse_desktop_app.py` fournit l’interface Tkinter pour lancer ces traitements
   et choisir les fichiers d’entrée.
-- `swile/run_cse_desktop_app.ps1` lance l’application avec l’interpréteur
-  local `swile/.venv/Scripts/python.exe`; `swile/debug/debug_deploy.ps1`
-  crée cet environnement et installe `swile/requirements.txt`. Un
-  environnement présent dans un autre répertoire (par exemple `scripts_CSE`)
-  ne satisfait pas cette vérification.
+- `run_cse_desktop_app.ps1` lance l’application avec l’interpréteur local
+  `.venv/Scripts/python.exe`; `debug/debug_deploy.ps1` crée cet environnement
+  et installe `requirements.txt`.
 
 Les fichiers CSV sont généralement générés dans les dossiers `in` et `out`
-propres aux flux. Les scripts résolvent leurs chemins à partir de leur propre
-emplacement. Un dossier local `scripts_CSE`, s’il est présent, ne remplace pas
-le projet suivi sous `swile`.
+propres aux flux. Les scripts résolvent leurs chemins à partir du dossier du
+script et détectent automatiquement la racine du projet, ce qui évite les
+références cassées après les mouvements de fichiers.
 
 ## Repères — flux Swile / Active Directory
 
-- `swile/swile_active_directory.py`
+- `swile_active_directory.py`
   - `read_csv` vérifie les colonnes requises et gère les fichiers CSV avec
     l’encodage `utf-8-sig`.
   - Les exports Swile utilisent `;` et contiennent `Prénom`, `Nom`, `Email` et
@@ -48,14 +49,14 @@ le projet suivi sous `swile`.
   - Les clés de rapprochement existantes sont l’email, le matricule normalisé
     et le nom normalisé. Les exclusions comprennent les comptes externes
     `.ext`, les doublons et certains postes de direction.
-- `swile/cse_desktop_app.py` porte les colonnes requises et les
-  délimiteurs affichés par l’interface ; garder ces paramètres cohérents si
-  le format d’entrée change.
-- `swile/liste_salarie_active_directory.config.json` est la configuration
-  lue par le script AD. Ne jamais recopier ses valeurs sensibles dans ce
-  document ni dans les réponses.
-- `swile/requirements.txt` liste les dépendances Python, dont `requests`,
-  `msal` et `tkinterdnd2`.
+- `cse_desktop_app.py` porte les colonnes requises et les délimiteurs affichés
+  par l’interface ; garder ces paramètres cohérents si le format d’entrée
+  change.
+- `liste_salarie_active_directory.config.json` est la configuration lue par le
+  script AD. Ne jamais recopier ses valeurs sensibles dans ce document ni dans
+  les réponses.
+- `requirements.txt` liste les dépendances Python, dont `requests`, `msal` et
+  `tkinterdnd2`.
 
 ## Pratiques de travail
 
@@ -80,3 +81,6 @@ le projet suivi sous `swile`.
   alimentée à partir de `Identifiant` dans l’export Active Directory. La
   comparaison normalise ce login, tandis que le fichier d’ajouts conserve sa
   valeur d’origine.
+- 2026-10-26 : le projet a été déplacé hors du dossier `swile/` vers la racine
+  du dépôt. Les scripts sont maintenant robustes aux layouts anciens et
+  nouveaux grâce à une détection automatique de la racine du projet.

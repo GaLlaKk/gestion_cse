@@ -16,7 +16,26 @@ from swile_active_directory import (
 )
 
 
-ROOT_DIRECTORY = Path(__file__).resolve().parent
+def resolve_project_root():
+    script_directory = Path(__file__).resolve().parent
+    for candidate in (
+        script_directory,
+        script_directory / "swile",
+        script_directory.parent,
+        script_directory.parent / "swile",
+    ):
+        if (
+            (candidate / "swile_active_directory").exists()
+            or (candidate / "liste_salarie_active_directory").exists()
+            or (candidate / "swile_active_directory.py").exists()
+            or (candidate / "liste_salarie_active_directory.py").exists()
+            or (candidate / "cse_desktop_app.py").exists()
+        ):
+            return candidate
+    return script_directory
+
+
+ROOT_DIRECTORY = resolve_project_root()
 SWILE_DIRECTORY = ROOT_DIRECTORY / "swile_active_directory"
 INPUT_DIRECTORY = SWILE_DIRECTORY / "in"
 OUTPUT_DIRECTORY = SWILE_DIRECTORY / "out"

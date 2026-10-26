@@ -6,7 +6,24 @@ from datetime import date
 from pathlib import Path
 
 
-APPLICATION_DIRECTORY = Path(__file__).resolve().parent / "swile_active_directory"
+def resolve_project_root():
+    script_directory = Path(__file__).resolve().parent
+    for candidate in (
+        script_directory,
+        script_directory / "swile",
+        script_directory.parent,
+        script_directory.parent / "swile",
+    ):
+        if (
+            (candidate / "swile_active_directory").exists()
+            or (candidate / "swile_active_directory.py").exists()
+            or (candidate / "cse_desktop_app.py").exists()
+        ):
+            return candidate
+    return script_directory
+
+
+APPLICATION_DIRECTORY = resolve_project_root() / "swile_active_directory"
 DEFAULT_TEMPLATE_FILE = (
     "collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv"
 )
