@@ -79,7 +79,7 @@ def initialize_output(config_path):
     return logger, output_dir, date_prefix
 
 
-def run_active_directory_export(on_device_code=None):
+def run_active_directory_export(on_device_code=None, download_photos=False):
     config_path = get_config_path()
     with config_path.open(encoding="utf-8") as config_file:
         config = json.load(config_file)
@@ -292,19 +292,20 @@ def run_active_directory_export(on_device_code=None):
                     if (is_root or is_epsilon_user) and not is_external_epsilon_email(
                         user_entry["identity"]["email"]
                     ):
-                        try:
-                            _download_user_photo(
-                                user_id,
-                                user_entry["identity"]["username"],
-                                output_dir / "photos",
-                                request_graph,
-                            )
-                        except requests.HTTPError:
-                            logger.exception(
-                                "Impossible de récupérer la photo de "
-                                "l’utilisateur %s.",
-                                user_id,
-                            )
+                        if download_photos:
+                            try:
+                                _download_user_photo(
+                                    user_id,
+                                    user_entry["identity"]["username"],
+                                    output_dir / "photos",
+                                    request_graph,
+                                )
+                            except requests.HTTPError:
+                                logger.exception(
+                                    "Impossible de récupérer la photo de "
+                                    "l’utilisateur %s.",
+                                    user_id,
+                                )
                         org_data.append(user_entry)
 
                     for report in direct_reports_data:

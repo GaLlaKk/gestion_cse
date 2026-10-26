@@ -76,6 +76,7 @@ class CSEFileManager(TkinterDnD.Tk):
         self.run_buttons = []
         self.is_running = False
         self.device_code_dialog = None
+        self.download_photos = tk.BooleanVar(value=False)
 
         tk.Label(
             self,
@@ -114,6 +115,11 @@ class CSEFileManager(TkinterDnD.Tk):
             "Générer la liste Active Directory",
             "active_directory",
         )
+        ttk.Checkbutton(
+            active_directory_tab,
+            text="Récupérer les photos (les photos déjà téléchargées seront conservées)",
+            variable=self.download_photos,
+        ).pack(anchor="w", pady=(0, 8))
         tk.Label(
             active_directory_tab,
             text=f"CSV créé dans : {ACTIVE_DIRECTORY_OUTPUT}",
@@ -397,7 +403,13 @@ class CSEFileManager(TkinterDnD.Tk):
                 )
                 threading.Thread(
                     target=self._run_worker,
-                    args=(action, None, None, None),
+                    args=(
+                        action,
+                        None,
+                        None,
+                        None,
+                        self.download_photos.get(),
+                    ),
                     daemon=True,
                 ).start()
                 return
@@ -440,14 +452,20 @@ class CSEFileManager(TkinterDnD.Tk):
             self._finish_run("", str(error), 1)
 
     def _run_worker(
-        self, action, swile_path, active_directory_path, template_path
+        self,
+        action,
+        swile_path,
+        active_directory_path,
+        template_path,
+        download_photos=False,
     ):
         output_writer = _OutputWriter(self)
         try:
             with redirect_stdout(output_writer), redirect_stderr(output_writer):
                 if action == "active_directory":
                     run_active_directory_export(
-                        on_device_code=self._schedule_device_code_dialog
+                        on_device_code=self._schedule_device_code_dialog,
+                        download_photos=download_photos,
                     )
                 else:
                     result = execute_swile_action(

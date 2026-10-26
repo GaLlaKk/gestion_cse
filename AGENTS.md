@@ -69,7 +69,8 @@ fichier/traitement pour le flux Swile.
 - L’export Active Directory met en cache les photos Graph existantes dans
   `liste_salarie_active_directory/out/photos`, sous le nom
   `{Identifiant}_{user-id}.jpg`; les fichiers déjà présents ne sont pas
-  re-téléchargés.
+  re-téléchargés. Leur récupération est désactivée par défaut et peut être
+  activée avec la case à cocher de l’interface.
 - `requirements.txt` liste les dépendances Python, dont `requests`, `msal` et
   `tkinterdnd2`.
 
