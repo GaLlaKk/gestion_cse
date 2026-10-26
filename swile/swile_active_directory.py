@@ -175,9 +175,7 @@ def generate_additions(
     _, swile_users = read_csv(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
-    template_columns, _ = read_csv(template_path, ";", {"Prénom", "Nom", "Email"})
-    if "Matricule" not in template_columns:
-        template_columns.append("Matricule")
+    template_columns, _ = read_csv(template_path, ";", {"Prénom", "Nom", "Email","Matricule"})
     _, active_directory_users = read_csv(
         active_directory_path, ",", {"Nom", "Email", "Identifiant", "Poste"}
     )
