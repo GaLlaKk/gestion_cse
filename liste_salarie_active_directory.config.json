@@ -1,0 +1,9 @@
+{
+  "start_user_email": "gpicquet@publicisgroupe.net",
+  "client_id": "1fec8e78-bce4-4aaf-ab1b-5451cc387264",
+  "authority": "https://login.microsoftonline.com/organizations",
+  "scopes": [
+    "User.ReadBasic.All"
+  ],
+  "report_domain": "epsilon-france.com"
+}

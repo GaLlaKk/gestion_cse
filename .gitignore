@@ -2,6 +2,9 @@
 *.pyc
 *.log
 *.csv
+!**/*config*.csv
 !**/*template*.csv
 *.json
+!**/*config*.json
+!**/*template*.json
 *.jsonl
