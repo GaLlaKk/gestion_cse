@@ -3,6 +3,7 @@ import shutil
 import threading
 import tkinter as tk
 import traceback
+import webbrowser
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -74,6 +75,7 @@ class CSEFileManager(TkinterDnD.Tk):
         self.file_labels = {}
         self.run_buttons = []
         self.is_running = False
+        self.device_code_dialog = None
 
         tk.Label(
             self,
@@ -444,7 +446,9 @@ class CSEFileManager(TkinterDnD.Tk):
         try:
             with redirect_stdout(output_writer), redirect_stderr(output_writer):
                 if action == "active_directory":
-                    run_active_directory_export()
+                    run_active_directory_export(
+                        on_device_code=self._schedule_device_code_dialog
+                    )
                 else:
                     result = execute_swile_action(
                         action,
@@ -462,7 +466,80 @@ class CSEFileManager(TkinterDnD.Tk):
             output_writer.write(error)
             self.after(0, lambda message=error: self._finish_run("", message, 1))
 
+    def _schedule_device_code_dialog(self, verification_uri, user_code):
+        self.after(
+            0,
+            self._show_device_code_dialog,
+            verification_uri,
+            user_code,
+        )
+
+    def _show_device_code_dialog(self, verification_uri, user_code):
+        dialog = tk.Toplevel(self)
+        self.device_code_dialog = dialog
+        dialog.title("Connexion Microsoft requise")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        content = tk.Frame(dialog, padx=20, pady=16)
+        content.pack(fill="both", expand=True)
+        tk.Label(
+            content,
+            text="Copiez ce code, puis saisissez-le sur la page Microsoft :",
+            wraplength=380,
+            justify="left",
+        ).pack(anchor="w")
+        tk.Label(
+            content,
+            text=user_code,
+            font=("Segoe UI", 20, "bold"),
+            pady=10,
+        ).pack()
+        tk.Label(
+            content,
+            text=verification_uri,
+            fg="#1769aa",
+            wraplength=380,
+        ).pack(anchor="w", pady=(0, 12))
+
+        buttons = tk.Frame(content)
+        buttons.pack(fill="x")
+        copy_status = tk.StringVar(value="")
+
+        def copy_code():
+            dialog.clipboard_clear()
+            dialog.clipboard_append(user_code)
+            dialog.update()
+            copy_status.set("Code copié dans le presse-papiers.")
+
+        tk.Button(
+            buttons,
+            text="Copier le code",
+            command=copy_code,
+        ).pack(side="left")
+        tk.Button(
+            buttons,
+            text="Ouvrir la page de connexion",
+            command=lambda: self._open_device_code_page(verification_uri),
+        ).pack(side="right")
+        tk.Label(content, textvariable=copy_status, fg="#176b35").pack(
+            anchor="w", pady=(8, 0)
+        )
+
+    def _open_device_code_page(self, verification_uri):
+        if not webbrowser.open(verification_uri):
+            messagebox.showerror(
+                "Ouverture impossible",
+                "Impossible d’ouvrir la page de connexion Microsoft.",
+                parent=self,
+            )
+
     def _finish_run(self, stdout, stderr, returncode):
+        if self.device_code_dialog is not None:
+            if self.device_code_dialog.winfo_exists():
+                self.device_code_dialog.destroy()
+            self.device_code_dialog = None
         self.is_running = False
         self._set_run_buttons_state("normal")
         result = "\n".join(part for part in (stdout.strip(), stderr.strip()) if part)

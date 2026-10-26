@@ -43,7 +43,7 @@ def initialize_output(config_path):
     return logger, output_dir, date_prefix
 
 
-def run_active_directory_export():
+def run_active_directory_export(on_device_code=None):
     config_path = get_config_path()
     with config_path.open(encoding="utf-8") as config_file:
         config = json.load(config_file)
@@ -96,8 +96,14 @@ def run_active_directory_export():
     if "user_code" not in flow:
         raise Exception("Impossible d'initier la connexion.")
 
-    print("--- CONNEXION REQUISE ---")
-    print(flow["message"])
+    if on_device_code is None:
+        print("--- CONNEXION REQUISE ---")
+        print(flow["message"])
+    else:
+        on_device_code(
+            flow.get("verification_uri", "https://login.microsoft.com/device"),
+            flow["user_code"],
+        )
     result = app.acquire_token_by_device_flow(flow)
 
     if "access_token" not in result:

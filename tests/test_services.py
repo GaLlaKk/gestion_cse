@@ -3,9 +3,65 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
+from services import active_directory_export
 from services.csv_files import latest_input_file, read_csv
 from services.swile_service import compare_users, generate_additions
+
+
+class ActiveDirectoryExportTests(unittest.TestCase):
+    def test_device_code_is_forwarded_to_callback(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config_path = Path(temporary_directory) / "config.json"
+            config_path.write_text(
+                (
+                    '{"start_user_email":"start@example.com",'
+                    '"client_id":"client-id","authority":"authority",'
+                    '"report_domain":"example.com","scopes":["scope"]}'
+                ),
+                encoding="utf-8",
+            )
+            flow = {
+                "user_code": "ABCD1234",
+                "verification_uri": "https://login.microsoft.com/device",
+                "message": "Sign in with code ABCD1234",
+            }
+            callback = Mock()
+            client = Mock()
+            client.initiate_device_flow.return_value = flow
+            client.acquire_token_by_device_flow.return_value = {
+                "error_description": "Authentication did not complete."
+            }
+
+            with (
+                patch.object(
+                    active_directory_export,
+                    "get_config_path",
+                    return_value=config_path,
+                ),
+                patch.object(
+                    active_directory_export,
+                    "initialize_output",
+                    return_value=(Mock(), Path(temporary_directory), "20260101"),
+                ),
+                patch.object(
+                    active_directory_export,
+                    "PublicClientApplication",
+                    return_value=client,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    Exception, "Authentication did not complete"
+                ):
+                    active_directory_export.run_active_directory_export(
+                        on_device_code=callback
+                    )
+
+            callback.assert_called_once_with(
+                "https://login.microsoft.com/device", "ABCD1234"
+            )
+            client.acquire_token_by_device_flow.assert_called_once_with(flow)
 
 
 class CsvFilesTests(unittest.TestCase):

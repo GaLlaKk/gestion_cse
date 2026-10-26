@@ -62,6 +62,10 @@ fichier/traitement pour le flux Swile.
 - `services/active_directory_export.py` lit
   `liste_salarie_active_directory.config.json`. Ne jamais recopier les valeurs
   sensibles de cette configuration dans ce document ni dans les réponses.
+- L’authentification Microsoft utilise le flux d’appareil MSAL. Le service
+  transmet le lien et le code à l’interface Tkinter via un callback pour
+  permettre la copie du code; en lancement CLI, le message MSAL reste affiché
+  dans la console.
 - `requirements.txt` liste les dépendances Python, dont `requests`, `msal` et
   `tkinterdnd2`.
 
