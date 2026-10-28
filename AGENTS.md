@@ -71,6 +71,9 @@ fichier/traitement pour le flux Swile.
   `{Identifiant}_{user-id}.jpg`; les fichiers déjà présents ne sont pas
   re-téléchargés. Leur récupération est désactivée par défaut et peut être
   activée avec la case à cocher de l’interface.
+- L’export configure un journal distinct à chaque lancement dans `log/` et y
+  trace les étapes de configuration, d’authentification, de collecte, de
+  récupération des photos et d’écriture du CSV, ainsi que les erreurs.
 - `requirements.txt` liste les dépendances Python, dont `requests`, `msal` et
   `tkinterdnd2`.
 

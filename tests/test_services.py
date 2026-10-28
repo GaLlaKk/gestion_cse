@@ -11,6 +11,34 @@ from services.swile_service import compare_users, generate_additions
 
 
 class ActiveDirectoryExportTests(unittest.TestCase):
+    def test_log_is_rotated_for_each_export_run(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config_path = Path(temporary_directory) / "config.json"
+            first_logger, _, _ = active_directory_export.initialize_output(
+                config_path
+            )
+            first_logger.info("Action du premier lancement.")
+            log_directory = Path(temporary_directory) / "log"
+            first_log = next(log_directory.glob("*.log"))
+
+            second_logger, _, _ = active_directory_export.initialize_output(
+                config_path
+            )
+            try:
+                second_logger.info("Action du second lancement.")
+                logs = list(log_directory.glob("*.log"))
+                second_log = next(path for path in logs if path != first_log)
+                first_content = first_log.read_text(encoding="utf-8")
+                second_content = second_log.read_text(encoding="utf-8")
+
+                self.assertIn("Action du premier lancement.", first_content)
+                self.assertNotIn("Action du second lancement.", first_content)
+                self.assertIn("Action du second lancement.", second_content)
+            finally:
+                for handler in second_logger.handlers[:]:
+                    second_logger.removeHandler(handler)
+                    handler.close()
+
     def test_photo_is_downloaded_once_and_reused_from_cache(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             photo_directory = Path(temporary_directory) / "photos"
@@ -82,6 +110,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             }
             callback = Mock()
             client = Mock()
+            logger = Mock()
             client.initiate_device_flow.return_value = flow
             client.acquire_token_by_device_flow.return_value = {
                 "error_description": "Authentication did not complete."
@@ -96,7 +125,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 patch.object(
                     active_directory_export,
                     "initialize_output",
-                    return_value=(Mock(), Path(temporary_directory), "20260101"),
+                    return_value=(logger, Path(temporary_directory), "20260101"),
                 ),
                 patch.object(
                     active_directory_export,
@@ -115,6 +144,10 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 "https://login.microsoft.com/device", "ABCD1234"
             )
             client.acquire_token_by_device_flow.assert_called_once_with(flow)
+            logger.error.assert_any_call("L’authentification Microsoft a échoué.")
+            logger.exception.assert_any_call(
+                "Échec de l’authentification Microsoft."
+            )
 
 
 class CsvFilesTests(unittest.TestCase):
