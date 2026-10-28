@@ -74,6 +74,10 @@ fichier/traitement pour le flux Swile.
 - L’export configure un journal distinct à chaque lancement dans `log/` et y
   trace les étapes de configuration, d’authentification, de collecte, de
   récupération des photos et d’écriture du CSV, ainsi que les erreurs.
+- L’export Active Directory écrit chaque ligne au fur et à mesure dans un CSV
+  temporaire, puis le publie sous son nom final uniquement si la collecte
+  réussit; cela évite de conserver tout l’export en mémoire et de présenter un
+  fichier partiel comme valide.
 - `requirements.txt` liste les dépendances Python, dont `requests`, `msal` et
   `tkinterdnd2`.
 

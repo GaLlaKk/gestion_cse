@@ -149,6 +149,89 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 "Échec de l’authentification Microsoft."
             )
 
+    def test_export_writes_rows_to_temporary_csv_before_publishing(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path = root / "config.json"
+            config_path.write_text(
+                (
+                    '{"start_user_email":"start@example.com",'
+                    '"client_id":"client-id","authority":"authority",'
+                    '"report_domain":"example.com","scopes":["scope"]}'
+                ),
+                encoding="utf-8",
+            )
+            output_directory = root / "out"
+            output_directory.mkdir()
+            final_path = (
+                output_directory / "20261028_liste_salarie_active_directory.csv"
+            )
+            flow = {"user_code": "ABCD1234", "message": "Sign in"}
+            client = Mock()
+            client.initiate_device_flow.return_value = flow
+            client.acquire_token_by_device_flow.return_value = {
+                "access_token": "token"
+            }
+
+            def graph_response(status_code=200, payload=None):
+                response = Mock(status_code=status_code)
+                response.json.return_value = payload
+                response.raise_for_status.return_value = None
+                return response
+
+            def request_graph(url, **_kwargs):
+                if "/users/start@example.com?" in url:
+                    return graph_response(
+                        payload={
+                            "id": "root-id",
+                            "displayName": "Start User",
+                            "mail": "start@example.com",
+                            "userPrincipalName": "start@example.com",
+                            "jobTitle": "Analyste",
+                            "department": "Services",
+                        }
+                    )
+                if "/users/root-id/manager" in url:
+                    return graph_response(status_code=404)
+                if "/users/root-id/directReports" in url:
+                    self.assertFalse(final_path.exists())
+                    self.assertEqual(
+                        len(list(output_directory.glob("*.tmp"))), 1
+                    )
+                    return graph_response(payload={"value": []})
+                self.fail(f"URL Graph inattendue : {url}")
+
+            with (
+                patch.object(
+                    active_directory_export,
+                    "get_config_path",
+                    return_value=config_path,
+                ),
+                patch.object(
+                    active_directory_export,
+                    "initialize_output",
+                    return_value=(Mock(), output_directory, "20261028"),
+                ),
+                patch.object(
+                    active_directory_export,
+                    "PublicClientApplication",
+                    return_value=client,
+                ),
+                patch.object(
+                    active_directory_export.requests,
+                    "get",
+                    side_effect=request_graph,
+                ),
+            ):
+                result_path = active_directory_export.run_active_directory_export()
+
+            self.assertEqual(result_path, final_path)
+            with final_path.open(encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["Email"], "start@example.com")
+            self.assertEqual(list(output_directory.glob("*.tmp")), [])
+
 
 class CsvFilesTests(unittest.TestCase):
     def test_read_csv_accepts_utf8_bom_and_checks_required_columns(self):

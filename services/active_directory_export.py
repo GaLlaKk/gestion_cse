@@ -276,8 +276,8 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
         }
         return user_entry, direct_reports_data, is_epsilon_user
 
-    def fetch_hierarchy():
-        org_data = []
+    def fetch_hierarchy(writer):
+        exported_count = 0
         processed_ids = set()
         pending = [(START_USER_EMAIL, True, 0)]
 
@@ -320,7 +320,20 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
                                 logger.exception(
                                     "Impossible de récupérer une photo de compte."
                                 )
-                        org_data.append(user_entry)
+                        writer.writerow(
+                            [
+                                user_entry["identity"]["name"],
+                                user_entry["identity"]["email"],
+                                user_entry["identity"]["username"],
+                                user_entry["professional_info"]["job_title"],
+                                user_entry["professional_info"]["business_unit"],
+                                user_entry["hierarchy"]["manager_email"],
+                                ", ".join(
+                                    user_entry["hierarchy"]["direct_reports"]
+                                ),
+                            ]
+                        )
+                        exported_count += 1
 
                     for report in direct_reports_data:
                         mail = report.get("mail")
@@ -348,26 +361,30 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
         logger.info(
             "Collecte terminée : %s comptes examinés, %s personnes retenues.",
             len(processed_ids),
-            len(org_data),
+            exported_count,
         )
-        return org_data
+        return exported_count
 
     logger.info(
         "Récupération des photos %s.",
         "activée" if download_photos else "désactivée",
     )
     logger.info("Démarrage de la collecte de la hiérarchie Active Directory.")
-    try:
-        org_data = fetch_hierarchy()
-    except Exception:
-        logger.exception("Échec de la collecte de la hiérarchie Active Directory.")
-        raise
     csv_filename = f"{date_prefix}_liste_salarie_active_directory.csv"
     csv_path = output_dir / csv_filename
-
+    temporary_path = None
     try:
-        with csv_path.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            newline="",
+            encoding="utf-8",
+            dir=output_dir,
+            prefix=f".{csv_filename}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            writer = csv.writer(temporary_file)
             writer.writerow(
                 [
                     "Nom",
@@ -379,26 +396,20 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
                     "Collaborateurs à charge",
                 ]
             )
-
-            for entry in org_data:
-                writer.writerow(
-                    [
-                        entry["identity"]["name"],
-                        entry["identity"]["email"],
-                        entry["identity"]["username"],
-                        entry["professional_info"]["job_title"],
-                        entry["professional_info"]["business_unit"],
-                        entry["hierarchy"]["manager_email"],
-                        ", ".join(entry["hierarchy"]["direct_reports"]),
-                    ]
-                )
+            exported_count = fetch_hierarchy(writer)
+        temporary_path.replace(csv_path)
     except Exception:
-        logger.exception("Échec de l’écriture de l’export Active Directory.")
+        logger.exception(
+            "Échec de la collecte ou de l’écriture de l’export Active Directory."
+        )
         raise
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
     logger.info(
         "Terminé : %s personnes exportées dans %s.",
-        len(org_data),
+        exported_count,
         csv_path,
     )
     return csv_path
