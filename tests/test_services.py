@@ -46,18 +46,29 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             response.raise_for_status.return_value = None
             request_graph = Mock(return_value=response)
 
-            photo_path = active_directory_export._download_user_photo(
-                "user-id", "jdupont", photo_directory, request_graph
-            )
-            cached_path = active_directory_export._download_user_photo(
-                "user-id", "jdupont", photo_directory, request_graph
-            )
+            with self.assertLogs(
+                "services.active_directory_export", level="INFO"
+            ) as captured_logs:
+                photo_path = active_directory_export._download_user_photo(
+                    "user-id", "jdupont", photo_directory, request_graph
+                )
+                cached_path = active_directory_export._download_user_photo(
+                    "user-id", "jdupont", photo_directory, request_graph
+                )
 
             self.assertEqual(
                 photo_path, photo_directory / "jdupont_user-id.jpg"
             )
             self.assertEqual(cached_path, photo_path)
             self.assertEqual(photo_path.read_bytes(), b"photo-bytes")
+            self.assertIn(
+                "Photo récupérée pour le compte jdupont.",
+                captured_logs.output[0],
+            )
+            self.assertIn(
+                "Photo réutilisée depuis le cache pour le compte jdupont.",
+                captured_logs.output[1],
+            )
             request_graph.assert_called_once_with(
                 "https://graph.microsoft.com/v1.0/users/user-id/photo/$value"
             )
@@ -68,12 +79,19 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             response = Mock(status_code=404)
             request_graph = Mock(return_value=response)
 
-            photo_path = active_directory_export._download_user_photo(
-                "user-id", "jdupont", photo_directory, request_graph
-            )
+            with self.assertLogs(
+                "services.active_directory_export", level="INFO"
+            ) as captured_logs:
+                photo_path = active_directory_export._download_user_photo(
+                    "user-id", "jdupont", photo_directory, request_graph
+                )
 
             self.assertIsNone(photo_path)
             self.assertFalse(photo_directory.exists())
+            self.assertIn(
+                "Aucune photo disponible pour le compte jdupont.",
+                captured_logs.output[0],
+            )
             request_graph.assert_called_once()
 
     def test_photo_filename_sanitizes_windows_path_characters(self):
@@ -172,6 +190,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             client.acquire_token_by_device_flow.return_value = {
                 "access_token": "token"
             }
+            logger = Mock()
 
             def graph_response(status_code=200, payload=None):
                 response = Mock(status_code=status_code)
@@ -210,7 +229,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 patch.object(
                     active_directory_export,
                     "initialize_output",
-                    return_value=(Mock(), output_directory, "20261028"),
+                    return_value=(logger, output_directory, "20261028"),
                 ),
                 patch.object(
                     active_directory_export,
@@ -226,6 +245,10 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 result_path = active_directory_export.run_active_directory_export()
 
             self.assertEqual(result_path, final_path)
+            logger.info.assert_any_call(
+                "Compte Active Directory examiné : %s.",
+                "start@example.com",
+            )
             with final_path.open(encoding="utf-8", newline="") as stream:
                 rows = list(csv.DictReader(stream))
             self.assertEqual(len(rows), 1)

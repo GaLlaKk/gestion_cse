@@ -16,20 +16,27 @@ from services.paths import project_root
 
 def _download_user_photo(user_id, identifier, photo_directory, request_graph):
     logger = logging.getLogger(__name__)
+    account_reference = identifier or user_id
     safe_identifier = "".join(
         "_" if character in '<>:"/\\|?*' else character
         for character in (identifier or "inconnu")
     ).rstrip(" .")
     photo_path = photo_directory / f"{safe_identifier}_{user_id}.jpg"
     if photo_path.is_file() and photo_path.stat().st_size > 0:
-        logger.info("Photo réutilisée depuis le cache.")
+        logger.info(
+            "Photo réutilisée depuis le cache pour le compte %s.",
+            account_reference,
+        )
         return photo_path
 
     response = request_graph(
         f"https://graph.microsoft.com/v1.0/users/{user_id}/photo/$value"
     )
     if response.status_code == 404:
-        logger.info("Aucune photo disponible pour un compte.")
+        logger.info(
+            "Aucune photo disponible pour le compte %s.",
+            account_reference,
+        )
         return None
     response.raise_for_status()
     if not response.content:
@@ -49,7 +56,7 @@ def _download_user_photo(user_id, identifier, photo_directory, request_graph):
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
-    logger.info("Photo récupérée.")
+    logger.info("Photo récupérée pour le compte %s.", account_reference)
     return photo_path
 
 
@@ -295,7 +302,10 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
                     batch, results
                 ):
                     if result is None:
-                        logger.warning("Compte introuvable dans Microsoft Graph.")
+                        logger.warning(
+                            "Compte %s introuvable dans Microsoft Graph.",
+                            user_id_or_email,
+                        )
                         continue
 
                     user_entry, direct_reports_data, is_epsilon_user = result
@@ -304,7 +314,15 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
                         continue
                     processed_ids.add(user_id)
 
-                    logger.info("Compte Active Directory traité.")
+                    account_reference = (
+                        user_entry["identity"]["email"]
+                        or user_entry["identity"]["username"]
+                        or user_id
+                    )
+                    logger.info(
+                        "Compte Active Directory examiné : %s.",
+                        account_reference,
+                    )
                     if (is_root or is_epsilon_user) and not is_external_epsilon_email(
                         user_entry["identity"]["email"]
                     ):
@@ -318,7 +336,8 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
                                 )
                             except requests.HTTPError:
                                 logger.exception(
-                                    "Impossible de récupérer une photo de compte."
+                                    "Impossible de récupérer la photo du compte %s.",
+                                    account_reference,
                                 )
                         writer.writerow(
                             [
