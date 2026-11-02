@@ -207,6 +207,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                             "mail": "start@example.com",
                             "userPrincipalName": "start@example.com",
                             "jobTitle": "Analyste",
+                            "officeLocation": "Paris",
                             "department": "Services",
                         }
                     )
@@ -253,6 +254,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 rows = list(csv.DictReader(stream))
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["Email"], "start@example.com")
+            self.assertEqual(rows[0]["Lieu de travail"], "Paris")
             self.assertEqual(list(output_directory.glob("*.tmp")), [])
 
 

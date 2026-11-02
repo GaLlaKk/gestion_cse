@@ -41,7 +41,8 @@ fichier/traitement pour le flux Swile.
 - `domain/matching.py`
   - Les exports Swile utilisent `;` et contiennent `Prénom`, `Nom`, `Email` et
     `Matricule`. L’export Active Directory utilise `,` et les champs `Nom`,
-    `Email`, `Identifiant`, `Poste`. `Identifiant` est le login avant `@` du
+    `Email`, `Identifiant`, `Poste`, `Lieu de travail` (et autres colonnes
+    d’enrichissement). `Identifiant` est le login avant `@` du
     `userPrincipalName` renvoyé par Microsoft Graph.
   - Le rapprochement inclut `Swile.Matricule` avec
     `Active Directory.Identifiant`, après normalisation.

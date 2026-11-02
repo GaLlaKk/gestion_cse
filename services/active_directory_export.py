@@ -215,7 +215,7 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
         user_url = (
             "https://graph.microsoft.com/v1.0/users/"
             f"{user_id_or_email}?$select=id,displayName,mail,userPrincipalName,"
-            "jobTitle,department"
+            "jobTitle,department,officeLocation"
         )
         user_response = request_graph(user_url)
         if user_response.status_code == 404:
@@ -266,6 +266,7 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
             "professional_info": {
                 "job_title": user_info.get("jobTitle"),
                 "business_unit": user_info.get("department"),
+                "work_location": user_info.get("officeLocation"),
             },
             "hierarchy": {
                 "manager_email": (
@@ -345,6 +346,7 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
                                 user_entry["identity"]["email"],
                                 user_entry["identity"]["username"],
                                 user_entry["professional_info"]["job_title"],
+                                user_entry["professional_info"]["work_location"],
                                 user_entry["professional_info"]["business_unit"],
                                 user_entry["hierarchy"]["manager_email"],
                                 ", ".join(
@@ -410,6 +412,7 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
                     "Email",
                     "Identifiant",
                     "Poste",
+                    "Lieu de travail",
                     "Business Unit",
                     "Manager Email",
                     "Collaborateurs à charge",
