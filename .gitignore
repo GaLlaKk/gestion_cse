@@ -10,3 +10,4 @@
 *.jsonl
 **/photos/*.jpg
 **/photos/*.jpeg
+*.xlsx

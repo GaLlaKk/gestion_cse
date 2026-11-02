@@ -7,7 +7,11 @@ from unittest.mock import Mock, patch
 
 from services import active_directory_export
 from services.csv_files import latest_input_file, read_csv
-from services.swile_service import compare_users, generate_additions
+from services.swile_service import (
+    compare_users,
+    generate_additions,
+    generate_work_location_values,
+)
 
 
 class ActiveDirectoryExportTests(unittest.TestCase):
@@ -388,6 +392,233 @@ class SwileServiceTests(unittest.TestCase):
         with output_path.open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.DictReader(stream, delimiter=";"))
         self.assertEqual(rows[0]["Matricule"], "J-2")
+
+    def test_generate_work_location_values_uses_expected_value_mapping(self):
+        swile_path = self._write_csv(
+            "swile-locations.csv",
+            ["Prénom", "Nom", "Email", "Matricule"],
+            [
+                {
+                    "Prénom": "Alice",
+                    "Nom": "Martin-Swile",
+                    "Email": "alice@epsilon-france.com",
+                    "Matricule": "swile_a",
+                },
+                {
+                    "Prénom": "Bob",
+                    "Nom": "Durand-Swile",
+                    "Email": "bob@epsilon-france.com",
+                    "Matricule": "swile_b",
+                },
+                {
+                    "Prénom": "Chloe",
+                    "Nom": "Petit-Swile",
+                    "Email": "chloe@epsilon-france.com",
+                    "Matricule": "swile_c",
+                },
+                {
+                    "Prénom": "Denis",
+                    "Nom": "Dupont-Swile",
+                    "Email": "denis@epsilon-france.com",
+                    "Matricule": "swile_d",
+                },
+            ],
+            ";",
+        )
+        active_directory_path = self._write_csv(
+            "active-directory-locations.csv",
+            ["Nom", "Email", "Identifiant", "Lieu de travail"],
+            [
+                {
+                    "Nom": "Alice Martin",
+                    "Email": "alice@epsilon-france.com",
+                    "Identifiant": "martin_a",
+                    "Lieu de travail": "FR Paris 145-151 rue de Courcelles",
+                },
+                {
+                    "Nom": "Bob Durand",
+                    "Email": "bob@epsilon-france.com",
+                    "Identifiant": "durand_b",
+                    "Lieu de travail": "29 Avenue De La Marne",
+                },
+                {
+                    "Nom": "Chloe Petit",
+                    "Email": "chloe@epsilon-france.com",
+                    "Identifiant": "petit_c",
+                    "Lieu de travail": "FR Paris 133",
+                },
+                {
+                    "Nom": "Denis Dupont",
+                    "Email": "denis@epsilon-france.com",
+                    "Identifiant": "dupont_d",
+                    "Lieu de travail": "Bordeaux",
+                },
+                {
+                    "Nom": "Paul Externe",
+                    "Email": "paul.ext@epsilon-france.com",
+                    "Identifiant": "externe_p",
+                    "Lieu de travail": "FR Paris 145-151 rue de Courcelles",
+                },
+                {
+                    "Nom": "NomUnique",
+                    "Email": "invalid@epsilon-france.com",
+                    "Identifiant": "invalid_i",
+                    "Lieu de travail": "FR Paris 145-151 rue de Courcelles",
+                },
+            ],
+            ",",
+        )
+        output_path = self.output_directory / "attribute-values.csv"
+
+        (
+            result_path,
+            generated_count,
+            missing_work_location_column,
+        ) = generate_work_location_values(
+            swile_path,
+            active_directory_path,
+            output_path,
+            "epsilon-france.com",
+        )
+
+        self.assertEqual(result_path, output_path)
+        self.assertEqual(generated_count, 4)
+        self.assertFalse(missing_work_location_column)
+        with output_path.open(encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream, delimiter=";"))
+        self.assertEqual(
+            [row["Valeur"] for row in rows],
+            ["Paris 145", "Lille 5.9", "Paris 133", "Autre"],
+        )
+        self.assertEqual(
+            [row["Matricule"] for row in rows],
+            ["martin_a", "durand_b", "petit_c", "dupont_d"],
+        )
+        self.assertEqual(rows[0]["Prénom"], "Alice")
+        self.assertEqual(rows[0]["Nom de famille"], "Martin-Swile")
+        self.assertEqual(rows[0]["E-mail"], "alice@epsilon-france.com")
+
+    def test_generate_work_location_values_handles_missing_column(self):
+        swile_path = self._write_csv(
+            "swile-no-location.csv",
+            ["Prénom", "Nom", "Email", "Matricule"],
+            [
+                {
+                    "Prénom": "Alice",
+                    "Nom": "Martin-Swile",
+                    "Email": "alice@epsilon-france.com",
+                    "Matricule": "swile_a",
+                },
+                {
+                    "Prénom": "Bob",
+                    "Nom": "Durand-Swile",
+                    "Email": "bob@epsilon-france.com",
+                    "Matricule": "swile_b",
+                },
+            ],
+            ";",
+        )
+        active_directory_path = self._write_csv(
+            "active-directory-no-location.csv",
+            ["Nom", "Email", "Identifiant"],
+            [
+                {
+                    "Nom": "Alice Martin",
+                    "Email": "alice@epsilon-france.com",
+                    "Identifiant": "martin_a",
+                },
+                {
+                    "Nom": "Bob Durand",
+                    "Email": "bob@epsilon-france.com",
+                    "Identifiant": "durand_b",
+                },
+            ],
+            ",",
+        )
+        output_path = self.output_directory / "attribute-values-fallback.csv"
+
+        (
+            _result_path,
+            generated_count,
+            missing_work_location_column,
+        ) = generate_work_location_values(
+            swile_path,
+            active_directory_path,
+            output_path,
+            "epsilon-france.com",
+        )
+
+        self.assertEqual(generated_count, 2)
+        self.assertTrue(missing_work_location_column)
+        with output_path.open(encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream, delimiter=";"))
+        self.assertEqual([row["Valeur"] for row in rows], ["Autre", "Autre"])
+        self.assertEqual([row["Matricule"] for row in rows], ["martin_a", "durand_b"])
+        self.assertEqual(
+            [row["Nom de famille"] for row in rows],
+            ["Martin-Swile", "Durand-Swile"],
+        )
+
+    def test_generate_work_location_values_keeps_all_swile_rows(self):
+        swile_path = self._write_csv(
+            "swile-all-kept.csv",
+            ["Prénom", "Nom", "Email", "Matricule"],
+            [
+                {
+                    "Prénom": "Alice",
+                    "Nom": "Martin",
+                    "Email": "alice@epsilon-france.com",
+                    "Matricule": "swile_a",
+                },
+                {
+                    "Prénom": "Bob",
+                    "Nom": "Durand",
+                    "Email": "bob@gmail.com",
+                    "Matricule": "swile_b",
+                },
+                {
+                    "Prénom": "",
+                    "Nom": "",
+                    "Email": "",
+                    "Matricule": "swile_c",
+                },
+            ],
+            ";",
+        )
+        active_directory_path = self._write_csv(
+            "active-directory-all-kept.csv",
+            ["Nom", "Email", "Identifiant", "Lieu de travail"],
+            [
+                {
+                    "Nom": "Alice Martin",
+                    "Email": "alice@epsilon-france.com",
+                    "Identifiant": "martin_a",
+                    "Lieu de travail": "FR Paris 145-151 rue de Courcelles",
+                }
+            ],
+            ",",
+        )
+        output_path = self.output_directory / "attribute-values-all-kept.csv"
+
+        (
+            _result_path,
+            generated_count,
+            missing_work_location_column,
+        ) = generate_work_location_values(
+            swile_path,
+            active_directory_path,
+            output_path,
+            "epsilon-france.com",
+        )
+
+        self.assertEqual(generated_count, 3)
+        self.assertFalse(missing_work_location_column)
+        with output_path.open(encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream, delimiter=";"))
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["Valeur"], "Paris 145")
+        self.assertEqual(rows[1]["Valeur"], "Autre")
+        self.assertEqual(rows[2]["Valeur"], "Autre")
 
 
 if __name__ == "__main__":

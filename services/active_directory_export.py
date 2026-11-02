@@ -14,6 +14,20 @@ from msal import PublicClientApplication
 from services.paths import project_root
 
 
+class LevelIconFormatter(logging.Formatter):
+    LEVEL_ICONS = {
+        logging.DEBUG: "🔎",
+        logging.INFO: "ℹ️",
+        logging.WARNING: "⚠️",
+        logging.ERROR: "❌",
+        logging.CRITICAL: "🔥",
+    }
+
+    def format(self, record):
+        icon = self.LEVEL_ICONS.get(record.levelno, "•")
+        return f"{icon} {super().format(record)}"
+
+
 def _download_user_photo(user_id, identifier, photo_directory, request_graph):
     logger = logging.getLogger(__name__)
     account_reference = identifier or user_id
@@ -72,7 +86,7 @@ def initialize_output(config_path):
     log_dir.mkdir(parents=True, exist_ok=True)
 
     run_started_at = datetime.now()
-    date_prefix = run_started_at.strftime("%Y%m%d")
+    date_prefix = run_started_at.strftime("%Y%m%dt%H%M%S")
     log_filename = (
         f"{date_prefix}_{run_started_at.strftime('%H%M%S_%f')}"
         "_liste_salarie_active_directory.log"
@@ -83,7 +97,7 @@ def initialize_output(config_path):
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
         handler.close()
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    formatter = LevelIconFormatter("%(asctime)s %(levelname)s %(message)s")
     for handler in (
         logging.FileHandler(log_dir / log_filename, encoding="utf-8"),
         logging.StreamHandler(),

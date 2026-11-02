@@ -1,6 +1,11 @@
 import csv
-from datetime import date
+from datetime import date, datetime
 
+from domain.normalization import (
+    normalize_matricule,
+    normalize_name,
+    remove_diacritics,
+)
 from domain.matching import compare_users as match_users
 from domain.swile_additions import build_additions
 from services.csv_files import DEFAULT_TEMPLATE_FILE, read_csv
@@ -21,9 +26,6 @@ def execute_swile_action(
     output_directory = output_directory or (
         root / "swile_active_directory" / "out"
     )
-    output_path = output_path or (
-        output_directory / f"collaborators-additions-{date.today():%Y%m%d}.csv"
-    )
     results = []
 
     if action in ("compare", "all"):
@@ -38,6 +40,10 @@ def execute_swile_action(
         )
 
     if action in ("additions", "all"):
+        additions_output_path = output_path or (
+            output_directory
+            / f"collaborators-additions-{datetime.now():%Y%m%dt%H%M%S}.csv"
+        )
         template_path = template_path or (
             root / "swile_active_directory" / "in" / DEFAULT_TEMPLATE_FILE
         )
@@ -57,13 +63,13 @@ def execute_swile_action(
             swile_path,
             active_directory_path,
             template_path,
-            output_path,
+            additions_output_path,
             report_domain,
             ignored_output_path,
         )
         results.extend(
             (
-                f"Ajouts à importer : {addition_count} -> {output_path}",
+                f"Ajouts à importer : {addition_count} -> {additions_output_path}",
                 "Ajouts ignorés (postes de direction) : "
                 f"{ignored_count} -> {ignored_path}",
                 f"Postes de direction exclus : {excluded_management}",
@@ -76,6 +82,33 @@ def execute_swile_action(
                 f"Lignes ignorées faute de nom exploitable : {excluded_invalid}"
             )
 
+    if action == "location_values":
+        location_values_output_path = output_path or (
+            output_directory
+            / f"collaborators-attribute-values-{date.today():%Y%m%dt%H%M%S}.csv"
+        )
+        (
+            generated_path,
+            generated_count,
+            missing_work_location_column,
+        ) = generate_work_location_values(
+            swile_path,
+            active_directory_path,
+            location_values_output_path,
+            report_domain,
+        )
+        results.extend(
+            (
+                "Valeurs de lieu de travail générées : "
+                f"{generated_count} -> {generated_path}",
+            )
+        )
+        if missing_work_location_column:
+            results.append(
+                "La colonne 'Lieu de travail' est absente du fichier Active "
+                "Directory ; la valeur 'Autre' a été appliquée."
+            )
+
     return "\n".join(results)
 
 
@@ -84,7 +117,7 @@ def compare_users(swile_path, active_directory_path, output_directory):
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
     _, active_directory_users = read_csv(
-        active_directory_path, ",", {"Nom", "Email"}
+        active_directory_path, ",", {"Nom", "Email", "Identifiant"}
     )
     found_users, not_found_users = match_users(
         swile_users, active_directory_users
@@ -169,4 +202,130 @@ def generate_additions(
         excluded_existing,
         excluded_invalid,
         excluded_external,
+    )
+
+
+def map_work_location_value(work_location):
+    normalized_location = remove_diacritics((work_location or "").strip())
+    if not normalized_location:
+        return "Autre"
+    if (
+        "145-151 rue de courcelles" in normalized_location
+        or (
+            "paris" in normalized_location
+            and "courcelles" in normalized_location
+        )
+    ):
+        return "Paris 145"
+    if (
+        "29 avenue de la marne" in normalized_location
+        or "wasquehal" in normalized_location
+    ):
+        return "Lille 5.9"
+    if (
+        "paris 133" in normalized_location
+        or ("paris" in normalized_location and "133" in normalized_location)
+    ):
+        return "Paris 133"
+    return "Autre"
+
+
+def generate_work_location_values(
+    swile_path,
+    active_directory_path,
+    output_path,
+    _report_domain,
+):
+    _, swile_users = read_csv(
+        swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
+    )
+    missing_work_location_column = False
+    try:
+        _, active_directory_users = read_csv(
+            active_directory_path, ",", {"Nom", "Email", "Lieu de travail"}
+        )
+    except ValueError as error:
+        if "Lieu de travail" not in str(error):
+            raise
+        missing_work_location_column = True
+        _, active_directory_users = read_csv(
+            active_directory_path, ",", {"Nom", "Email"}
+        )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    locations_by_email = {}
+    locations_by_matricule = {}
+    locations_by_name = {}
+    for user in active_directory_users:
+        email_key = (user.get("Email") or "").strip().casefold()
+        if email_key:
+            locations_by_email[email_key] = user
+        matricule_key = normalize_matricule(user.get("Identifiant") or "")
+        if matricule_key:
+            locations_by_matricule[matricule_key] = user
+        name_key = normalize_name(user.get("Nom") or "")
+        if name_key:
+            locations_by_name[name_key] = user
+
+    generated_rows = []
+    for user in swile_users:
+        email = (user.get("Email") or "").strip()
+        first_name = (user.get("Prénom") or "").strip()
+        last_name = (user.get("Nom") or "").strip()
+
+        swile_matricule = (user.get("Matricule") or "").strip()
+        normalized_email = email.casefold()
+        matched_active_directory_user = (
+            locations_by_email.get(normalized_email)
+            or locations_by_matricule.get(normalize_matricule(swile_matricule))
+            or locations_by_name.get(normalize_name(f"{first_name} {last_name}"))
+        )
+        matricule = (
+            (
+                (
+                    matched_active_directory_user.get("Identifiant")
+                    if matched_active_directory_user
+                    else ""
+                )
+                or swile_matricule
+            ).strip()
+        )
+        generated_rows.append(
+            {
+                "Prénom": first_name,
+                "Nom de famille": last_name,
+                "E-mail": email,
+                "Matricule": matricule,
+                "Valeur": map_work_location_value(
+                    (
+                        matched_active_directory_user.get("Lieu de travail")
+                        if (
+                            matched_active_directory_user
+                            and not missing_work_location_column
+                        )
+                        else None
+                    )
+                ),
+            }
+        )
+
+    with output_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=(
+                "Prénom",
+                "Nom de famille",
+                "E-mail",
+                "Matricule",
+                "Valeur",
+            ),
+            delimiter=";",
+        )
+        writer.writeheader()
+        writer.writerows(generated_rows)
+
+    return (
+        output_path,
+        len(generated_rows),
+        missing_work_location_column,
     )

@@ -51,6 +51,16 @@ fichier/traitement pour le flux Swile.
 - `domain/swile_additions.py`
   - `build_additions` applique les règles métier en mémoire; le service écrit
     les fichiers d’ajouts et d’ajouts ignorés.
+- `services/swile_service.py`
+  - `generate_work_location_values` produit un CSV Swile d’attribut
+    (`Prénom`, `Nom de famille`, `E-mail`, `Matricule`, `Valeur`) ; les
+    informations d’identité viennent du CSV Swile et la valeur est déduite du
+    `Lieu de travail` dans l’export Active Directory.
+  - Toutes les lignes du CSV Swile sont conservées dans ce fichier (pas de
+    filtre de domaine ni d’exclusion `.ext`).
+  - Mapping actuellement appliqué : adresses Courcelles -> `Paris 145`,
+    adresses Wasquehal / avenue de la Marne -> `Lille 5.9`, mentions de
+    Paris 133 -> `Paris 133`, sinon `Autre`.
 - `domain/normalization.py`
   - `active_directory_keys` normalise le login de `Identifiant` pour les
     rapprochements. L’export garde le login original dans `Matricule`; le nom

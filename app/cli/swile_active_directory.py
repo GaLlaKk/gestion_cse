@@ -12,13 +12,21 @@ APPLICATION_DIRECTORY = ROOT_DIRECTORY / "swile_active_directory"
 def main():
     input_directory = APPLICATION_DIRECTORY / "in"
     output_directory = APPLICATION_DIRECTORY / "out"
+    actions_needing_swile = {"compare", "additions", "all", "location_values"}
+    actions_needing_template = {"additions", "all"}
     parser = argparse.ArgumentParser(
-        description="Comparer Swile à l'Active Directory et préparer des ajouts."
+        description=(
+            "Comparer Swile à l'Active Directory, préparer des ajouts, "
+            "ou générer un fichier de valeurs d'attribut."
+        )
     )
     parser.add_argument(
         "action",
-        choices=("compare", "additions", "all"),
-        help="Traitement à effectuer : comparaison, ajouts, ou les deux.",
+        choices=("compare", "additions", "all", "location_values"),
+        help=(
+            "Traitement à effectuer : comparaison, ajouts, les deux, "
+            "ou génération des valeurs de lieu de travail."
+        ),
     )
     parser.add_argument(
         "--swile-file",
@@ -48,7 +56,9 @@ def main():
         "--output-file",
         type=Path,
         default=None,
-        help="Fichier de sortie pour les ajouts.",
+        help=(
+            "Fichier de sortie personnalisé (ajouts ou valeurs de lieu de travail)."
+        ),
     )
     parser.add_argument(
         "--ignored-output-file",
@@ -65,21 +75,25 @@ def main():
         help="Domaine des employés à inclure (par défaut : epsilon-france.com).",
     )
     args = parser.parse_args()
-    swile_path = args.swile_file or latest_input_file(
-        input_directory, "collaborators*.csv", "Swile"
-    )
+
+    swile_path = None
+    if args.action in actions_needing_swile:
+        swile_path = args.swile_file or latest_input_file(
+            input_directory, "collaborators*.csv", "Swile"
+        )
     active_directory_path = args.active_directory_file or latest_input_file(
         input_directory,
         "*liste_salarie_active_directory.csv",
         "Active Directory",
     )
+    template_path = args.template_file if args.action in actions_needing_template else None
 
     print(
         execute_swile_action(
             args.action,
             swile_path,
             active_directory_path,
-            template_path=args.template_file,
+            template_path=template_path,
             output_directory=args.output_directory,
             output_path=args.output_file,
             ignored_output_path=args.ignored_output_file,

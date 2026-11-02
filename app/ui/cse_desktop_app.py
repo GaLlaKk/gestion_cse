@@ -140,13 +140,26 @@ class CSEFileManager(TkinterDnD.Tk):
             wraplength=700,
         ).pack(fill="x", pady=(4, 0))
 
+        swile_subtabs = ttk.Notebook(swile_tab)
+        swile_subtabs.pack(fill="both", expand=True)
+        existing_options_tab = tk.Frame(swile_subtabs, padx=8, pady=8)
+        location_values_tab = tk.Frame(swile_subtabs, padx=8, pady=8)
+        swile_subtabs.add(existing_options_tab, text="Options existantes")
+        swile_subtabs.add(
+            location_values_tab, text="Valeurs de lieu de travail"
+        )
+
         compare_section = tk.LabelFrame(
-            swile_tab, text="1. Comparer les listes", padx=10, pady=8
+            existing_options_tab, text="1. Comparer les listes", padx=10, pady=8
         )
         compare_section.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=4)
-        swile_tab.grid_columnconfigure(0, weight=1, uniform="swile_actions")
-        swile_tab.grid_columnconfigure(1, weight=1, uniform="swile_actions")
-        swile_tab.grid_rowconfigure(0, weight=1)
+        existing_options_tab.grid_columnconfigure(
+            0, weight=1, uniform="swile_actions"
+        )
+        existing_options_tab.grid_columnconfigure(
+            1, weight=1, uniform="swile_actions"
+        )
+        existing_options_tab.grid_rowconfigure(0, weight=1)
         self._create_run_button(
             compare_section, "Comparer les listes", "compare"
         )
@@ -154,7 +167,7 @@ class CSEFileManager(TkinterDnD.Tk):
             self._create_input_card(kind, compare_section)
 
         additions_section = tk.LabelFrame(
-            swile_tab, text="2. Préparer les ajouts Swile", padx=10, pady=8
+            existing_options_tab, text="2. Préparer les ajouts Swile", padx=10, pady=8
         )
         additions_section.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=4)
         self._create_run_button(
@@ -170,6 +183,42 @@ class CSEFileManager(TkinterDnD.Tk):
             justify="left",
         ).pack(fill="x", pady=(2, 4))
         self._create_input_card("template", additions_section)
+
+        location_values_section = tk.LabelFrame(
+            location_values_tab,
+            text="Générer les valeurs de lieu de travail",
+            padx=10,
+            pady=8,
+        )
+        location_values_section.pack(fill="x", pady=(0, 4))
+        self._create_run_button(
+            location_values_section,
+            "Générer le CSV Prénom / Nom de famille / E-mail / Matricule / Valeur",
+            "location_values",
+        )
+        tk.Label(
+            location_values_section,
+            text=(
+                "Cette étape utilise le fichier ACTIVE DIRECTORY déposé dans "
+                "l'onglet « Options existantes » "
+                "et produit un CSV avec les colonnes Prénom, Nom de famille, "
+                "E-mail, Matricule et Valeur."
+            ),
+            anchor="w",
+            justify="left",
+            wraplength=760,
+        ).pack(fill="x", pady=(2, 2))
+        tk.Label(
+            location_values_section,
+            text=(
+                "Valeurs générées automatiquement : Paris 145, Lille 5.9, "
+                "Paris 133 ou Autre."
+            ),
+            anchor="w",
+            justify="left",
+            wraplength=760,
+            fg="#555555",
+        ).pack(fill="x")
 
         footer = tk.Frame(self)
         footer.pack(fill="x", pady=(0, 8))
@@ -433,19 +482,28 @@ class CSEFileManager(TkinterDnD.Tk):
 
             swile_path = self._current_file("swile")
             active_directory_path = self._current_file("active_directory")
-            template_path = self._current_file("template") if action in (
+            actions_requiring_swile = {
+                "compare",
                 "additions",
                 "all",
-            ) else None
+                "location_values",
+            }
+            actions_requiring_template = {"additions", "all"}
+            template_path = (
+                self._current_file("template")
+                if action in actions_requiring_template
+                else None
+            )
+            required_inputs = []
+            if action in actions_requiring_swile:
+                required_inputs.append((swile_path, TITLES["swile"]))
+            required_inputs.append(
+                (active_directory_path, TITLES["active_directory"])
+            )
             missing = [
-                label
-                for path, label in (
-                    (swile_path, TITLES["swile"]),
-                    (active_directory_path, TITLES["active_directory"]),
-                )
-                if path is None
+                label for path, label in required_inputs if path is None
             ]
-            if action in ("additions", "all") and template_path is None:
+            if action in actions_requiring_template and template_path is None:
                 missing.append(TITLES["template"])
             if missing:
                 messagebox.showerror(
