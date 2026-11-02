@@ -215,6 +215,7 @@ def map_work_location_value(work_location):
             "paris" in normalized_location
             and "courcelles" in normalized_location
         )
+        or ("paris" in normalized_location and "145" in normalized_location)
     ):
         return "Paris 145"
     if (
