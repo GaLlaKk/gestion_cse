@@ -28,14 +28,19 @@ REQUIRED_COLUMNS = {
     "template": {"Prénom", "Nom", "Email", "Matricule"},
 }
 TITLES = {
-    "swile": "Liste actuelle des salariés Swile",
-    "active_directory": "Export des salariés Active Directory",
-    "template": "Modèle CSV Swile",
+    "swile": "FICHIER SWILE - Liste actuelle des salariés",
+    "active_directory": "FICHIER ACTIVE DIRECTORY - Export des salariés",
+    "template": "MODELE SWILE - CSV d'import",
 }
 INSTRUCTIONS = {
-    "swile": "Déposez ici le CSV Swile actuel (séparateur « ; »).",
-    "active_directory": "Déposez ici un export Active Directory (séparateur « , »).",
-    "template": "Déposez ici le modèle d’import Swile (séparateur « ; »).",
+    "swile": "CSV SWILE ATTENDU ici (séparateur « ; »).",
+    "active_directory": "CSV ACTIVE DIRECTORY ATTENDU ici (séparateur « , »).",
+    "template": "MODELE SWILE ATTENDU ici (séparateur « ; »).",
+}
+INPUT_HIGHLIGHTS = {
+    "swile": ("SWILE", "#0a4f8a"),
+    "active_directory": ("ACTIVE DIRECTORY", "#176b35"),
+    "template": ("MODELE SWILE", "#71f19e"),
 }
 DELIMITERS = {
     "swile": ";",
@@ -202,6 +207,18 @@ class CSEFileManager(TkinterDnD.Tk):
 
         description = tk.Frame(card)
         description.pack(side="left", fill="x", expand=True)
+        highlight_text, highlight_background = INPUT_HIGHLIGHTS[kind]
+        tk.Label(
+            description,
+            text=f"FICHIER ATTENDU : {highlight_text}",
+            anchor="w",
+            justify="left",
+            bg=highlight_background,
+            fg="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            padx=6,
+            pady=2,
+        ).pack(fill="x", pady=(0, 4))
         tk.Label(
             description,
             text=INSTRUCTIONS[kind],
