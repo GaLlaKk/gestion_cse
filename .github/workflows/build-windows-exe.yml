@@ -1,4 +1,4 @@
-name: Tests and Windows executable
+name: Tests and desktop executables
 
 on:
   push:
@@ -8,7 +8,11 @@ on:
 
 jobs:
   tests:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,7 +30,7 @@ jobs:
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
-  build:
+  build-windows:
     needs: tests
     runs-on: windows-latest
     steps:
@@ -76,5 +80,111 @@ jobs:
           name: GestionCSE-windows-x64
           path: |
             dist/GestionCSE.exe
+            dist/LIRE_AVANT_LANCEMENT.txt
+          if-no-files-found: error
+
+  build-macos:
+    needs: tests
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+
+      - name: Build executable
+        run: >-
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name GestionCSE
+          --collect-all tkinterdnd2
+          --add-data "swile_active_directory/in/collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv:swile_active_directory/in"
+          cse_desktop_app.py
+
+      - name: Add runtime instructions
+        shell: bash
+        run: |
+          cat > dist/LIRE_AVANT_LANCEMENT.txt << 'EOF'
+          Lancer GestionCSE.
+
+          Le modèle CSV Swile est embarqué dans l'exécutable.
+          Pour générer l'export Active Directory, placez
+          liste_salarie_active_directory.config.json à côté de l'exécutable.
+          Ce fichier de configuration n'est pas inclus dans l'artefact.
+
+          Les fichiers d'entrée et de sortie restent à côté de l'exécutable,
+          dans swile_active_directory/in et swile_active_directory/out.
+          EOF
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionCSE-macos
+          path: |
+            dist/GestionCSE
+            dist/LIRE_AVANT_LANCEMENT.txt
+          if-no-files-found: error
+
+  build-linux:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+
+      - name: Build executable
+        run: >-
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name GestionCSE
+          --collect-all tkinterdnd2
+          --add-data "swile_active_directory/in/collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv:swile_active_directory/in"
+          cse_desktop_app.py
+
+      - name: Add runtime instructions
+        shell: bash
+        run: |
+          cat > dist/LIRE_AVANT_LANCEMENT.txt << 'EOF'
+          Lancer GestionCSE.
+
+          Le modèle CSV Swile est embarqué dans l'exécutable.
+          Pour générer l'export Active Directory, placez
+          liste_salarie_active_directory.config.json à côté de l'exécutable.
+          Ce fichier de configuration n'est pas inclus dans l'artefact.
+
+          Les fichiers d'entrée et de sortie restent à côté de l'exécutable,
+          dans swile_active_directory/in et swile_active_directory/out.
+          EOF
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionCSE-linux
+          path: |
+            dist/GestionCSE
             dist/LIRE_AVANT_LANCEMENT.txt
           if-no-files-found: error

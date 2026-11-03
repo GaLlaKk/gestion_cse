@@ -22,29 +22,38 @@ SWILE_DIRECTORY = ROOT_DIRECTORY / "swile_active_directory"
 INPUT_DIRECTORY = SWILE_DIRECTORY / "in"
 OUTPUT_DIRECTORY = SWILE_DIRECTORY / "out"
 ACTIVE_DIRECTORY_OUTPUT = ROOT_DIRECTORY / "liste_salarie_active_directory" / "out"
+ACTIVE_DIRECTORY_INPUT = ROOT_DIRECTORY / "liste_salarie_active_directory" / "in"
 REQUIRED_COLUMNS = {
     "swile": {"Prénom", "Nom", "Email", "Matricule"},
     "active_directory": {"Nom", "Email", "Identifiant", "Poste"},
+    "active_directory_previous": {"Nom", "Email", "Identifiant", "Poste"},
     "template": {"Prénom", "Nom", "Email", "Matricule"},
 }
 TITLES = {
     "swile": "FICHIER SWILE - Liste actuelle des salariés",
     "active_directory": "FICHIER ACTIVE DIRECTORY - Export des salariés",
+    "active_directory_previous": "FICHIER ACTIVE DIRECTORY PRECEDENT (optionnel)",
     "template": "MODELE SWILE - CSV d'import",
 }
 INSTRUCTIONS = {
     "swile": "CSV SWILE ATTENDU ici (séparateur « ; »).",
     "active_directory": "CSV ACTIVE DIRECTORY ATTENDU ici (séparateur « , »).",
+    "active_directory_previous": (
+        "CSV ACTIVE DIRECTORY PRECEDENT (optionnel) pour compléter "
+        "les comptes manquants s’ils sont toujours visibles."
+    ),
     "template": "MODELE SWILE ATTENDU ici (séparateur « ; »).",
 }
 INPUT_HIGHLIGHTS = {
     "swile": ("SWILE", "#0a4f8a"),
     "active_directory": ("ACTIVE DIRECTORY", "#176b35"),
+    "active_directory_previous": ("ACTIVE DIRECTORY PRECEDENT", "#0f5b7a"),
     "template": ("MODELE SWILE", "#71f19e"),
 }
 DELIMITERS = {
     "swile": ";",
     "active_directory": ",",
+    "active_directory_previous": ",",
     "template": ";",
 }
 DEFAULT_TEMPLATE_FILE = (
@@ -125,6 +134,9 @@ class CSEFileManager(TkinterDnD.Tk):
             text="Récupérer les photos (les photos déjà téléchargées seront conservées)",
             variable=self.download_photos,
         ).pack(anchor="w", pady=(0, 8))
+        previous_export_section = tk.Frame(active_directory_tab, padx=10, pady=0)
+        previous_export_section.pack(fill="x", pady=(0, 8))
+        self._create_input_card("active_directory_previous", previous_export_section)
         tk.Label(
             active_directory_tab,
             text=f"CSV créé dans : {ACTIVE_DIRECTORY_OUTPUT}",
@@ -253,7 +265,11 @@ class CSEFileManager(TkinterDnD.Tk):
         ).pack(fill="x")
         tk.Label(
             description,
-            text=f"Destination : {INPUT_DIRECTORY} (nom d’origine conservé)",
+            text=(
+                "Destination : "
+                f"{self._input_directory_for_kind(kind)} "
+                "(nom d’origine conservé)"
+            ),
             anchor="w",
             justify="left",
             fg="#555555",
@@ -297,9 +313,16 @@ class CSEFileManager(TkinterDnD.Tk):
                 command=self._copy_latest_active_directory,
             ).pack(side="right", padx=(0, 8))
 
+    @staticmethod
+    def _input_directory_for_kind(kind):
+        if kind == "active_directory_previous":
+            return ACTIVE_DIRECTORY_INPUT
+        return INPUT_DIRECTORY
+
     def _current_file(self, kind):
+        input_directory = self._input_directory_for_kind(kind)
         return max(
-            self._files_of_kind(INPUT_DIRECTORY, kind),
+            self._files_of_kind(input_directory, kind),
             key=lambda path: path.stat().st_mtime,
             default=None,
         )
@@ -331,7 +354,11 @@ class CSEFileManager(TkinterDnD.Tk):
         for kind, label in self.file_labels.items():
             path = self._current_file(kind)
             if path is None:
-                label.configure(text="Aucun fichier trouvé dans in", fg="#a33")
+                input_directory = self._input_directory_for_kind(kind)
+                label.configure(
+                    text=f"Aucun fichier trouvé dans {input_directory.name}",
+                    fg="#a33",
+                )
             else:
                 label.configure(text=f"Prêt : {path.name}", fg="#176b35")
 
@@ -371,8 +398,9 @@ class CSEFileManager(TkinterDnD.Tk):
             if not source.is_file() or source.suffix.casefold() != ".csv":
                 raise ValueError("Sélectionnez un fichier CSV existant.")
             read_csv(source, DELIMITERS[kind], REQUIRED_COLUMNS[kind])
-            destination = INPUT_DIRECTORY / source.name
-            INPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
+            input_directory = self._input_directory_for_kind(kind)
+            destination = input_directory / source.name
+            input_directory.mkdir(parents=True, exist_ok=True)
 
             if source.resolve() == destination.resolve():
                 self._refresh_file_labels()
@@ -432,6 +460,9 @@ class CSEFileManager(TkinterDnD.Tk):
             return
         try:
             if action == "active_directory":
+                previous_export_path = self._current_file(
+                    "active_directory_previous"
+                )
                 self.is_running = True
                 self.status.set("Collecte Active Directory en cours…")
                 self._set_run_buttons_state("disabled")
@@ -447,6 +478,7 @@ class CSEFileManager(TkinterDnD.Tk):
                         None,
                         None,
                         self.download_photos.get(),
+                        previous_export_path,
                     ),
                     daemon=True,
                 ).start()
@@ -498,6 +530,7 @@ class CSEFileManager(TkinterDnD.Tk):
         active_directory_path,
         template_path,
         download_photos=False,
+        previous_export_path=None,
     ):
         output_writer = _OutputWriter(self)
         try:
@@ -506,6 +539,7 @@ class CSEFileManager(TkinterDnD.Tk):
                     run_active_directory_export(
                         on_device_code=self._schedule_device_code_dialog,
                         download_photos=download_photos,
+                        previous_export_path=previous_export_path,
                     )
                 else:
                     result = execute_swile_action(

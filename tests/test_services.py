@@ -261,6 +261,241 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             self.assertEqual(rows[0]["Lieu de travail"], "Paris")
             self.assertEqual(list(output_directory.glob("*.tmp")), [])
 
+    def test_export_appends_visible_users_from_previous_export(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path = root / "config.json"
+            config_path.write_text(
+                (
+                    '{"start_user_email":"start@example.com",'
+                    '"client_id":"client-id","authority":"authority",'
+                    '"report_domain":"example.com","scopes":["scope"]}'
+                ),
+                encoding="utf-8",
+            )
+            output_directory = root / "out"
+            output_directory.mkdir()
+            previous_export_path = root / "previous.csv"
+            with previous_export_path.open(
+                "w", newline="", encoding="utf-8-sig"
+            ) as stream:
+                writer = csv.DictWriter(
+                    stream,
+                    fieldnames=["Nom", "Email", "Identifiant", "Poste"],
+                    delimiter=",",
+                )
+                writer.writeheader()
+                writer.writerows(
+                    [
+                        {
+                            "Nom": "Start User",
+                            "Email": "start@example.com",
+                            "Identifiant": "start",
+                            "Poste": "Analyste",
+                        },
+                        {
+                            "Nom": "Legacy User",
+                            "Email": "legacy@example.com",
+                            "Identifiant": "legacy",
+                            "Poste": "Consultant",
+                        },
+                    ]
+                )
+
+            final_path = (
+                output_directory / "20261028_liste_salarie_active_directory.csv"
+            )
+            flow = {"user_code": "ABCD1234", "message": "Sign in"}
+            client = Mock()
+            client.initiate_device_flow.return_value = flow
+            client.acquire_token_by_device_flow.return_value = {
+                "access_token": "token"
+            }
+            logger = Mock()
+
+            def graph_response(status_code=200, payload=None):
+                response = Mock(status_code=status_code)
+                response.json.return_value = payload
+                response.raise_for_status.return_value = None
+                return response
+
+            def request_graph(url, **_kwargs):
+                if "/users/start@example.com?" in url:
+                    return graph_response(
+                        payload={
+                            "id": "root-id",
+                            "displayName": "Start User",
+                            "mail": "start@example.com",
+                            "userPrincipalName": "start@example.com",
+                            "jobTitle": "Analyste",
+                            "officeLocation": "Paris",
+                            "department": "Services",
+                        }
+                    )
+                if "/users/root-id/manager" in url:
+                    return graph_response(status_code=404)
+                if "/users/root-id/directReports" in url:
+                    return graph_response(payload={"value": []})
+                if "/users/legacy@example.com?" in url:
+                    return graph_response(
+                        payload={
+                            "id": "legacy-id",
+                            "displayName": "Legacy User",
+                            "mail": "legacy@example.com",
+                            "userPrincipalName": "legacy@example.com",
+                            "jobTitle": "Consultant",
+                            "officeLocation": "Lille",
+                            "department": "Data",
+                        }
+                    )
+                if "/users/legacy-id/manager" in url:
+                    return graph_response(status_code=404)
+                if "/users/legacy-id/directReports" in url:
+                    return graph_response(payload={"value": []})
+                self.fail(f"URL Graph inattendue : {url}")
+
+            with (
+                patch.object(
+                    active_directory_export,
+                    "get_config_path",
+                    return_value=config_path,
+                ),
+                patch.object(
+                    active_directory_export,
+                    "initialize_output",
+                    return_value=(logger, output_directory, "20261028"),
+                ),
+                patch.object(
+                    active_directory_export,
+                    "PublicClientApplication",
+                    return_value=client,
+                ),
+                patch.object(
+                    active_directory_export.requests,
+                    "get",
+                    side_effect=request_graph,
+                ),
+            ):
+                result_path = active_directory_export.run_active_directory_export(
+                    previous_export_path=previous_export_path
+                )
+
+            self.assertEqual(result_path, final_path)
+            with final_path.open(encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(
+                [row["Email"] for row in rows],
+                ["start@example.com", "legacy@example.com"],
+            )
+
+    def test_export_does_not_append_missing_users_from_previous_export(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path = root / "config.json"
+            config_path.write_text(
+                (
+                    '{"start_user_email":"start@example.com",'
+                    '"client_id":"client-id","authority":"authority",'
+                    '"report_domain":"example.com","scopes":["scope"]}'
+                ),
+                encoding="utf-8",
+            )
+            output_directory = root / "out"
+            output_directory.mkdir()
+            previous_export_path = root / "previous.csv"
+            with previous_export_path.open(
+                "w", newline="", encoding="utf-8-sig"
+            ) as stream:
+                writer = csv.DictWriter(
+                    stream,
+                    fieldnames=["Nom", "Email", "Identifiant", "Poste"],
+                    delimiter=",",
+                )
+                writer.writeheader()
+                writer.writerows(
+                    [
+                        {
+                            "Nom": "Start User",
+                            "Email": "start@example.com",
+                            "Identifiant": "start",
+                            "Poste": "Analyste",
+                        },
+                        {
+                            "Nom": "Deleted User",
+                            "Email": "deleted@example.com",
+                            "Identifiant": "deleted",
+                            "Poste": "Consultant",
+                        },
+                    ]
+                )
+
+            flow = {"user_code": "ABCD1234", "message": "Sign in"}
+            client = Mock()
+            client.initiate_device_flow.return_value = flow
+            client.acquire_token_by_device_flow.return_value = {
+                "access_token": "token"
+            }
+            logger = Mock()
+
+            def graph_response(status_code=200, payload=None):
+                response = Mock(status_code=status_code)
+                response.json.return_value = payload
+                response.raise_for_status.return_value = None
+                return response
+
+            def request_graph(url, **_kwargs):
+                if "/users/start@example.com?" in url:
+                    return graph_response(
+                        payload={
+                            "id": "root-id",
+                            "displayName": "Start User",
+                            "mail": "start@example.com",
+                            "userPrincipalName": "start@example.com",
+                            "jobTitle": "Analyste",
+                            "officeLocation": "Paris",
+                            "department": "Services",
+                        }
+                    )
+                if "/users/root-id/manager" in url:
+                    return graph_response(status_code=404)
+                if "/users/root-id/directReports" in url:
+                    return graph_response(payload={"value": []})
+                if "/users/deleted@example.com?" in url:
+                    return graph_response(status_code=404)
+                self.fail(f"URL Graph inattendue : {url}")
+
+            with (
+                patch.object(
+                    active_directory_export,
+                    "get_config_path",
+                    return_value=config_path,
+                ),
+                patch.object(
+                    active_directory_export,
+                    "initialize_output",
+                    return_value=(logger, output_directory, "20261028"),
+                ),
+                patch.object(
+                    active_directory_export,
+                    "PublicClientApplication",
+                    return_value=client,
+                ),
+                patch.object(
+                    active_directory_export.requests,
+                    "get",
+                    side_effect=request_graph,
+                ),
+            ):
+                result_path = active_directory_export.run_active_directory_export(
+                    previous_export_path=previous_export_path
+                )
+
+            with result_path.open(encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["Email"], "start@example.com")
+
 
 class CsvFilesTests(unittest.TestCase):
     def test_read_csv_accepts_utf8_bom_and_checks_required_columns(self):

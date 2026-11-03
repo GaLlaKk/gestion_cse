@@ -22,8 +22,8 @@ racine sont des points d’entrée conservés pour lancer les traitements.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
 - `.github/workflows/build-windows-exe.yml` exécute les tests unitaires avant
-  de construire l’exécutable Windows; l’artefact inclut le modèle Swile, mais
-  pas la configuration Active Directory.
+  de construire les exécutables Windows, macOS et Linux; les artefacts incluent
+  le modèle Swile, mais pas la configuration Active Directory.
 - `run_cse_desktop_app.ps1` lance l’application avec l’interpréteur local
   `.venv/Scripts/python.exe`; `debug/debug_deploy.ps1` crée cet environnement
   et installe `requirements.txt`.
@@ -70,6 +70,10 @@ fichier/traitement pour le flux Swile.
     `.ext`, les doublons et certains postes de direction.
 - `app/ui/cse_desktop_app.py` porte les colonnes requises et les délimiteurs
   affichés par l’interface; les garder cohérents si le format d’entrée change.
+  L’onglet `liste_salarie_active_directory` accepte aussi un CSV Active
+  Directory précédent (glisser-déposer dans
+  `liste_salarie_active_directory/in`) pour compléter le nouvel export avec les
+  comptes absents mais encore visibles dans Microsoft Graph.
 - `services/active_directory_export.py` lit
   `liste_salarie_active_directory.config.json`. Ne jamais recopier les valeurs
   sensibles de cette configuration dans ce document ni dans les réponses.

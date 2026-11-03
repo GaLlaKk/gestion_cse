@@ -11,7 +11,20 @@ from pathlib import Path
 import requests
 from msal import PublicClientApplication
 
+from domain.normalization import active_directory_keys
+from services.csv_files import read_csv
 from services.paths import project_root
+
+CSV_HEADERS = (
+    "Nom",
+    "Email",
+    "Identifiant",
+    "Poste",
+    "Lieu de travail",
+    "Business Unit",
+    "Manager Email",
+    "Collaborateurs à charge",
+)
 
 
 class LevelIconFormatter(logging.Formatter):
@@ -108,7 +121,28 @@ def initialize_output(config_path):
     return logger, output_dir, date_prefix
 
 
-def run_active_directory_export(on_device_code=None, download_photos=False):
+def _csv_row_from_user_entry(user_entry):
+    return {
+        "Nom": user_entry["identity"]["name"],
+        "Email": user_entry["identity"]["email"],
+        "Identifiant": user_entry["identity"]["username"],
+        "Poste": user_entry["professional_info"]["job_title"],
+        "Lieu de travail": user_entry["professional_info"]["work_location"],
+        "Business Unit": user_entry["professional_info"]["business_unit"],
+        "Manager Email": user_entry["hierarchy"]["manager_email"],
+        "Collaborateurs à charge": ", ".join(
+            user_entry["hierarchy"]["direct_reports"]
+        ),
+    }
+
+
+def run_active_directory_export(
+    on_device_code=None,
+    download_photos=False,
+    previous_export_path=None,
+):
+    if previous_export_path is not None:
+        previous_export_path = Path(previous_export_path)
     config_path = get_config_path()
     logger, output_dir, date_prefix = initialize_output(config_path)
     try:
@@ -298,10 +332,22 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
         }
         return user_entry, direct_reports_data, is_epsilon_user
 
+    def add_exported_keys(keys_by_type, row):
+        for key_type, key in active_directory_keys(row).items():
+            if key:
+                keys_by_type[key_type].add(key)
+
+    def has_exported_key(keys_by_type, row):
+        return any(
+            key and key in keys_by_type[key_type]
+            for key_type, key in active_directory_keys(row).items()
+        )
+
     def fetch_hierarchy(writer):
         exported_count = 0
         processed_ids = set()
         pending = [(START_USER_EMAIL, True, 0)]
+        exported_keys_by_type = {"email": set(), "matricule": set(), "name": set()}
 
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS) as executor:
             while pending:
@@ -354,20 +400,9 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
                                     "Impossible de récupérer la photo du compte %s.",
                                     account_reference,
                                 )
-                        writer.writerow(
-                            [
-                                user_entry["identity"]["name"],
-                                user_entry["identity"]["email"],
-                                user_entry["identity"]["username"],
-                                user_entry["professional_info"]["job_title"],
-                                user_entry["professional_info"]["work_location"],
-                                user_entry["professional_info"]["business_unit"],
-                                user_entry["hierarchy"]["manager_email"],
-                                ", ".join(
-                                    user_entry["hierarchy"]["direct_reports"]
-                                ),
-                            ]
-                        )
+                        row = _csv_row_from_user_entry(user_entry)
+                        writer.writerow([row[column] for column in CSV_HEADERS])
+                        add_exported_keys(exported_keys_by_type, row)
                         exported_count += 1
 
                     for report in direct_reports_data:
@@ -398,7 +433,96 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
             len(processed_ids),
             exported_count,
         )
-        return exported_count
+        return exported_count, exported_keys_by_type
+
+    def append_visible_previous_users(writer, exported_keys_by_type):
+        if previous_export_path is None:
+            logger.info("Aucun fichier d’export précédent fourni.")
+            return 0
+        if not previous_export_path.is_file():
+            raise FileNotFoundError(
+                "Le fichier d’export précédent est introuvable : "
+                f"{previous_export_path}"
+            )
+
+        logger.info(
+            "Comparaison avec l’export précédent : %s.",
+            previous_export_path,
+        )
+        _, previous_rows = read_csv(
+            previous_export_path,
+            ",",
+            {"Nom", "Email", "Identifiant", "Poste"},
+        )
+        missing_rows = [
+            row for row in previous_rows if not has_exported_key(exported_keys_by_type, row)
+        ]
+        logger.info(
+            "Comparaison export précédent : %s ligne(s), %s absente(s) du fichier courant.",
+            len(previous_rows),
+            len(missing_rows),
+        )
+
+        appended_count = 0
+        visible_count = 0
+        checked_users = set()
+        for previous_row in missing_rows:
+            candidate = (previous_row.get("Email") or "").strip()
+            if not candidate:
+                candidate = (previous_row.get("Identifiant") or "").strip()
+            if not candidate:
+                continue
+            candidate_key = candidate.casefold()
+            if candidate_key in checked_users:
+                continue
+            checked_users.add(candidate_key)
+
+            result = fetch_user_record(candidate)
+            if result is None:
+                continue
+            user_entry, _direct_reports_data, is_epsilon_user = result
+            is_start_user = (
+                (user_entry["identity"]["email"] or "").casefold()
+                == START_USER_EMAIL.casefold()
+            )
+            if (
+                not (is_epsilon_user or is_start_user)
+                or is_external_epsilon_email(user_entry["identity"]["email"])
+            ):
+                continue
+
+            visible_count += 1
+            row = _csv_row_from_user_entry(user_entry)
+            if has_exported_key(exported_keys_by_type, row):
+                continue
+            if download_photos:
+                account_reference = (
+                    user_entry["identity"]["email"]
+                    or user_entry["identity"]["username"]
+                    or user_entry["id"]
+                )
+                try:
+                    _download_user_photo(
+                        user_entry["id"],
+                        user_entry["identity"]["username"],
+                        output_dir / "photos",
+                        request_graph,
+                    )
+                except requests.HTTPError:
+                    logger.exception(
+                        "Impossible de récupérer la photo du compte %s.",
+                        account_reference,
+                    )
+            writer.writerow([row[column] for column in CSV_HEADERS])
+            add_exported_keys(exported_keys_by_type, row)
+            appended_count += 1
+
+        logger.info(
+            "Comparaison export précédent : %s compte(s) encore visible(s), %s ajouté(s).",
+            visible_count,
+            appended_count,
+        )
+        return appended_count
 
     logger.info(
         "Récupération des photos %s.",
@@ -420,19 +544,12 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
         ) as temporary_file:
             temporary_path = Path(temporary_file.name)
             writer = csv.writer(temporary_file)
-            writer.writerow(
-                [
-                    "Nom",
-                    "Email",
-                    "Identifiant",
-                    "Poste",
-                    "Lieu de travail",
-                    "Business Unit",
-                    "Manager Email",
-                    "Collaborateurs à charge",
-                ]
+            writer.writerow(list(CSV_HEADERS))
+            exported_count, exported_keys_by_type = fetch_hierarchy(writer)
+            appended_from_previous = append_visible_previous_users(
+                writer,
+                exported_keys_by_type,
             )
-            exported_count = fetch_hierarchy(writer)
         temporary_path.replace(csv_path)
     except Exception:
         logger.exception(
@@ -444,8 +561,9 @@ def run_active_directory_export(on_device_code=None, download_photos=False):
             temporary_path.unlink(missing_ok=True)
 
     logger.info(
-        "Terminé : %s personnes exportées dans %s.",
+        "Terminé : %s personnes exportées (+%s depuis l’export précédent) dans %s.",
         exported_count,
+        appended_from_previous,
         csv_path,
     )
     return csv_path
