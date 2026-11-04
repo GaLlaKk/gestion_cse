@@ -1,4 +1,5 @@
 import os
+import json
 import shutil
 import threading
 import tkinter as tk
@@ -15,7 +16,12 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 from services.csv_files import read_csv
 from services.paths import bundled_resource, project_root
 from services.swile_service import execute_swile_action
-from services.active_directory_export import run_active_directory_export
+from services.active_directory_export import (
+    get_config_path,
+    run_active_directory_export,
+    save_active_directory_config,
+    validate_config,
+)
 
 ROOT_DIRECTORY = project_root()
 SWILE_DIRECTORY = ROOT_DIRECTORY / "swile_active_directory"
@@ -58,6 +64,12 @@ DELIMITERS = {
 }
 DEFAULT_TEMPLATE_FILE = (
     "collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv"
+)
+ACTIVE_DIRECTORY_CONFIG_FIELDS = (
+    ("start_user_email", "Adresse de départ"),
+    ("client_id", "Identifiant de l’application"),
+    ("authority", "Autorité Microsoft"),
+    ("report_domain", "Domaine de rapport"),
 )
 
 
@@ -134,6 +146,118 @@ class CSEFileManager(TkinterDnD.Tk):
             text="Récupérer les photos (les photos déjà téléchargées seront conservées)",
             variable=self.download_photos,
         ).pack(anchor="w", pady=(0, 8))
+        config_container = tk.Frame(active_directory_tab)
+        config_container.pack(fill="x", pady=(0, 8))
+        self.active_directory_config_expanded = tk.BooleanVar(value=False)
+        self.active_directory_config_toggle = ttk.Checkbutton(
+            config_container,
+            text="Afficher la configuration Active Directory",
+            variable=self.active_directory_config_expanded,
+            command=self._toggle_active_directory_config,
+        )
+        self.active_directory_config_toggle.pack(anchor="w")
+        config_section = tk.LabelFrame(
+            config_container,
+            text="Paramètres Active Directory",
+            padx=10,
+            pady=7,
+        )
+        self.active_directory_config_section = config_section
+        tk.Label(
+            config_section,
+            text=f"Fichier : {get_config_path()}",
+            anchor="w",
+            justify="left",
+            wraplength=760,
+        ).pack(fill="x", pady=(0, 4))
+        config_fields = tk.Frame(config_section)
+        config_fields.pack(fill="x", expand=True)
+        config_fields.columnconfigure(1, weight=1)
+        config_fields.columnconfigure(3, weight=1)
+        self.active_directory_config_vars = {}
+        self.active_directory_config_controls = []
+        for index, (field, label) in enumerate(
+            ACTIVE_DIRECTORY_CONFIG_FIELDS
+        ):
+            row = (index // 2) * 2
+            column = (index % 2) * 2
+            tk.Label(config_fields, text=label, anchor="w").grid(
+                row=row,
+                column=column,
+                sticky="w",
+                padx=(0, 6 if column == 0 else 12),
+                pady=(2, 0),
+            )
+            value = tk.StringVar()
+            entry = tk.Entry(config_fields, textvariable=value)
+            entry.grid(
+                row=row + 1,
+                column=column,
+                columnspan=2,
+                sticky="ew",
+                padx=(0, 12 if column == 0 else 0),
+                pady=(0, 4),
+            )
+            entry.bind("<KeyRelease>", self._mark_active_directory_config_dirty)
+            entry.bind("<<Paste>>", self._mark_active_directory_config_dirty)
+            self.active_directory_config_vars[field] = value
+            self.active_directory_config_controls.append(entry)
+
+        scopes_row = len(ACTIVE_DIRECTORY_CONFIG_FIELDS)
+        tk.Label(
+            config_fields,
+            text="Autorisations (scopes, une par ligne)",
+            anchor="w",
+        ).grid(row=scopes_row, column=0, columnspan=4, sticky="w")
+        self.active_directory_scopes_editor = ScrolledText(
+            config_fields,
+            height=3,
+            wrap="word",
+        )
+        self.active_directory_scopes_editor.grid(
+            row=scopes_row + 1,
+            column=0,
+            columnspan=4,
+            sticky="ew",
+        )
+        self.active_directory_scopes_editor.bind(
+            "<KeyRelease>", self._mark_active_directory_config_dirty
+        )
+        self.active_directory_scopes_editor.bind(
+            "<<Paste>>", self._mark_active_directory_config_dirty
+        )
+        self.active_directory_config_controls.append(
+            self.active_directory_scopes_editor
+        )
+        self.active_directory_config_dirty = False
+        config_actions = tk.Frame(config_section)
+        config_actions.pack(fill="x", pady=(5, 0))
+        self.active_directory_config_status = tk.StringVar(value="")
+        save_config_button = tk.Button(
+            config_actions,
+            text="Enregistrer la configuration",
+            command=self._save_active_directory_config,
+        )
+        save_config_button.pack(side="left")
+        reload_config_button = tk.Button(
+            config_actions,
+            text="Recharger",
+            command=self._load_active_directory_config,
+        )
+        reload_config_button.pack(side="left", padx=(6, 0))
+        self.active_directory_config_controls.extend(
+            (
+                self.active_directory_config_toggle,
+                save_config_button,
+                reload_config_button,
+            )
+        )
+        tk.Label(
+            config_actions,
+            textvariable=self.active_directory_config_status,
+            anchor="e",
+            fg="#555555",
+        ).pack(side="right", fill="x", expand=True, padx=(8, 0))
         previous_export_section = tk.Frame(active_directory_tab, padx=10, pady=0)
         previous_export_section.pack(fill="x", pady=(0, 8))
         self._create_input_card("active_directory_previous", previous_export_section)
@@ -225,7 +349,99 @@ class CSEFileManager(TkinterDnD.Tk):
         )
         self.output = ScrolledText(self, height=8, wrap="word", state="disabled")
         self.output.pack(fill="both", expand=True, pady=(3, 0))
+        self._load_active_directory_config()
         self._refresh_file_labels()
+
+    def _load_active_directory_config(self):
+        if self.active_directory_config_dirty and not messagebox.askyesno(
+            "Recharger la configuration ?",
+            "Les modifications non enregistrées seront perdues. Continuer ?",
+            parent=self,
+        ):
+            return
+        config_path = get_config_path()
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(config, dict):
+                raise ValueError(
+                    "La configuration doit contenir un objet JSON."
+                )
+            for field, _ in ACTIVE_DIRECTORY_CONFIG_FIELDS:
+                value = config.get(field, "")
+                self.active_directory_config_vars[field].set(
+                    value if isinstance(value, str) else json.dumps(value)
+                )
+            scopes = config.get("scopes", [])
+            if isinstance(scopes, list):
+                scopes_text = "\n".join(str(scope) for scope in scopes)
+            else:
+                scopes_text = json.dumps(scopes)
+            self.active_directory_scopes_editor.delete("1.0", "end")
+            self.active_directory_scopes_editor.insert("1.0", scopes_text)
+            self.active_directory_config_dirty = False
+            try:
+                validate_config(config, config_path)
+            except ValueError as error:
+                self.active_directory_config_status.set(
+                    f"Configuration à compléter : {error}"
+                )
+                self.active_directory_config_expanded.set(True)
+            else:
+                self.active_directory_config_status.set(
+                    "Configuration chargée."
+                )
+                self.active_directory_config_expanded.set(False)
+        except (OSError, UnicodeError, ValueError) as error:
+            self.active_directory_config_status.set(
+                f"Configuration à renseigner : {error}"
+            )
+            self.active_directory_config_expanded.set(True)
+        self._toggle_active_directory_config()
+
+    def _toggle_active_directory_config(self):
+        if self.active_directory_config_expanded.get():
+            if not self.active_directory_config_section.winfo_manager():
+                self.active_directory_config_section.pack(
+                    fill="x", pady=(0, 8)
+                )
+            self.active_directory_config_toggle.configure(
+                text="Masquer la configuration Active Directory"
+            )
+        else:
+            self.active_directory_config_section.pack_forget()
+            self.active_directory_config_toggle.configure(
+                text="Afficher la configuration Active Directory"
+            )
+
+    def _save_active_directory_config(self):
+        config = {
+            field: value.get()
+            for field, value in self.active_directory_config_vars.items()
+        }
+        config["scopes"] = [
+            scope.strip()
+            for scope in self.active_directory_scopes_editor.get(
+                "1.0", "end-1c"
+            ).splitlines()
+            if scope.strip()
+        ]
+        contents = json.dumps(config, indent=2, ensure_ascii=False) + "\n"
+        try:
+            save_active_directory_config(contents)
+        except (OSError, UnicodeError, ValueError) as error:
+            self.active_directory_config_status.set("Enregistrement impossible.")
+            messagebox.showerror(
+                "Configuration invalide",
+                str(error),
+                parent=self,
+            )
+            return
+        self.active_directory_config_dirty = False
+        self.active_directory_config_status.set("Configuration enregistrée.")
+
+    def _mark_active_directory_config_dirty(self, event):
+        if event.widget is not None:
+            self.active_directory_config_dirty = True
 
     def _create_run_button(self, parent, label, action):
         button = tk.Button(
@@ -466,6 +682,7 @@ class CSEFileManager(TkinterDnD.Tk):
                 self.is_running = True
                 self.status.set("Collecte Active Directory en cours…")
                 self._set_run_buttons_state("disabled")
+                self._set_config_controls_state("disabled")
                 self._set_output(
                     "Démarrage de la collecte Active Directory…\n"
                     "Les demandes de connexion apparaîtront ci-dessous.\n"
@@ -514,6 +731,7 @@ class CSEFileManager(TkinterDnD.Tk):
             self.is_running = True
             self.status.set("Traitement en cours…")
             self._set_run_buttons_state("disabled")
+            self._set_config_controls_state("disabled")
             self._set_output("Traitement en cours…\n")
             threading.Thread(
                 target=self._run_worker,
@@ -634,6 +852,7 @@ class CSEFileManager(TkinterDnD.Tk):
             self.device_code_dialog = None
         self.is_running = False
         self._set_run_buttons_state("normal")
+        self._set_config_controls_state("normal")
         result = "\n".join(part for part in (stdout.strip(), stderr.strip()) if part)
         if not result:
             result = "Traitement terminé." if returncode == 0 else "Échec du traitement."
@@ -652,6 +871,10 @@ class CSEFileManager(TkinterDnD.Tk):
     def _set_run_buttons_state(self, state):
         for button in self.run_buttons:
             button.configure(state=state)
+
+    def _set_config_controls_state(self, state):
+        for control in self.active_directory_config_controls:
+            control.configure(state=state)
 
     def _set_output(self, text):
         self.output.configure(state="normal")

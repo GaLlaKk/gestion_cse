@@ -1,4 +1,5 @@
 import csv
+import json
 import os
 import tempfile
 import unittest
@@ -12,6 +13,63 @@ from services.swile_service import (
     generate_additions,
     generate_work_location_values,
 )
+
+
+class ActiveDirectoryConfigTests(unittest.TestCase):
+    def test_save_valid_config_atomically_replaces_file(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config_path = Path(temporary_directory) / "config.json"
+            config_path.write_text("ancienne configuration", encoding="utf-8")
+            contents = (
+                '{\n  "start_user_email": "user@example.com",\n'
+                '  "client_id": "client-id",\n'
+                '  "authority": "authority",\n'
+                '  "report_domain": "example.com",\n'
+                '  "scopes": ["scope"]\n}'
+            )
+
+            result_path = active_directory_export.save_active_directory_config(
+                contents, config_path
+            )
+
+            self.assertEqual(result_path, config_path)
+            self.assertEqual(config_path.read_text(encoding="utf-8"), contents)
+            self.assertEqual(list(config_path.parent.glob("*.tmp")), [])
+            self.assertEqual(
+                active_directory_export.validate_config(
+                    json.loads(contents), config_path
+                ),
+                ["scope"],
+            )
+
+    def test_invalid_config_does_not_replace_existing_file(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config_path = Path(temporary_directory) / "config.json"
+            original_contents = "configuration existante"
+            config_path.write_text(original_contents, encoding="utf-8")
+
+            with self.assertRaises(ValueError):
+                active_directory_export.save_active_directory_config(
+                    "{invalid json", config_path
+                )
+
+            self.assertEqual(
+                config_path.read_text(encoding="utf-8"), original_contents
+            )
+            self.assertEqual(list(config_path.parent.glob("*.tmp")), [])
+
+    def test_config_validation_rejects_missing_required_setting(self):
+        config = {
+            "start_user_email": "user@example.com",
+            "client_id": "client-id",
+            "authority": "authority",
+            "report_domain": "example.com",
+            "scopes": ["scope"],
+        }
+        del config["client_id"]
+
+        with self.assertRaisesRegex(ValueError, "client_id"):
+            active_directory_export.validate_config(config, "config.json")
 
 
 class ActiveDirectoryExportTests(unittest.TestCase):

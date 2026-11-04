@@ -79,8 +79,14 @@ fichier/traitement pour le flux Swile.
   `liste_salarie_active_directory/in`) pour compléter le nouvel export avec les
   comptes absents mais encore visibles dans Microsoft Graph.
 - `services/active_directory_export.py` lit
-  `liste_salarie_active_directory.config.json`. Ne jamais recopier les valeurs
-  sensibles de cette configuration dans ce document ni dans les réponses.
+  `liste_salarie_active_directory.config.json`. L’interface Tkinter affiche
+  les paramètres de cette configuration dans des champs éditables séparés,
+  repliés par défaut quand le fichier est valide et ouverts quand la
+  configuration est absente ou incomplète. Elle les place avant la zone
+  facultative d’export précédent et valide les champs requis avant un
+  enregistrement atomique.
+  Ne jamais recopier les valeurs sensibles de cette configuration dans ce
+  document ni dans les réponses.
 - L’authentification Microsoft utilise le flux d’appareil MSAL. Le service
   transmet le lien et le code à l’interface Tkinter via un callback pour
   permettre la copie du code; en lancement CLI, le message MSAL reste affiché

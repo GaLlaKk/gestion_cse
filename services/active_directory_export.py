@@ -91,6 +91,64 @@ def get_config_path():
     return project_root() / "liste_salarie_active_directory.config.json"
 
 
+def validate_config(config, config_path):
+    if not isinstance(config, dict):
+        raise ValueError(
+            f"La configuration doit être un objet JSON dans {config_path}."
+        )
+
+    required_string_settings = (
+        "start_user_email",
+        "client_id",
+        "authority",
+        "report_domain",
+    )
+    for setting_name in required_string_settings:
+        if (
+            not isinstance(config.get(setting_name), str)
+            or not config[setting_name].strip()
+        ):
+            raise ValueError(
+                f"Le paramètre '{setting_name}' doit être une chaîne non vide "
+                f"dans {config_path}."
+            )
+
+    scopes = config.get("scopes")
+    if not isinstance(scopes, list) or not scopes or not all(
+        isinstance(scope, str) and scope.strip() for scope in scopes
+    ):
+        raise ValueError(
+            f"Le paramètre 'scopes' doit être une liste de chaînes non vides "
+            f"dans {config_path}."
+        )
+    return scopes
+
+
+def save_active_directory_config(contents, config_path=None):
+    config_path = Path(config_path or get_config_path())
+    config = json.loads(contents)
+    validate_config(config, config_path)
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=config_path.parent,
+            prefix=f".{config_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(contents)
+        temporary_path.replace(config_path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    return config_path
+
+
 def initialize_output(config_path):
     application_directory = config_path.parent
     output_dir = application_directory / "liste_salarie_active_directory" / "out"
@@ -148,31 +206,7 @@ def run_active_directory_export(
     try:
         with config_path.open(encoding="utf-8") as config_file:
             config = json.load(config_file)
-
-        required_string_settings = (
-            "start_user_email",
-            "client_id",
-            "authority",
-            "report_domain",
-        )
-        for setting_name in required_string_settings:
-            if (
-                not isinstance(config.get(setting_name), str)
-                or not config[setting_name].strip()
-            ):
-                raise ValueError(
-                    f"Le paramètre '{setting_name}' doit être une chaîne non vide "
-                    f"dans {config_path}."
-                )
-
-        scopes = config.get("scopes")
-        if not isinstance(scopes, list) or not scopes or not all(
-            isinstance(scope, str) and scope.strip() for scope in scopes
-        ):
-            raise ValueError(
-                f"Le paramètre 'scopes' doit être une liste de chaînes non vides "
-                f"dans {config_path}."
-            )
+        scopes = validate_config(config, config_path)
     except Exception:
         logger.exception(
             "Impossible de charger ou valider la configuration Active Directory."
