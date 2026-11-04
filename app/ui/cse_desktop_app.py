@@ -199,11 +199,6 @@ class CSEFileManager(TkinterDnD.Tk):
             state="disabled",
         )
         self.output.pack(fill="both", expand=True, pady=(4, 8))
-        tk.Button(
-            results_panel,
-            text="Ouvrir le dossier de résultats",
-            command=self._open_output_directory,
-        ).pack(anchor="w")
 
         active_directory_tab = tk.Frame(self.tabs, padx=12, pady=12)
         swile_tab = tk.Frame(self.tabs, padx=12, pady=12)
@@ -567,16 +562,39 @@ class CSEFileManager(TkinterDnD.Tk):
             self.active_directory_config_dirty = True
 
     def _create_run_button(self, parent, label, action):
-        """Crée un bouton d’action et le mémorise pour gérer son état."""
+        """Crée une rangée d’action avec l’accès aux résultats associés."""
+        actions = tk.Frame(parent)
+        actions.pack(fill="x", pady=(0, 4))
         button = tk.Button(
-            parent,
+            actions,
             text=label,
             command=lambda selected=action: self._run(selected),
-            padx=8,
-            pady=5,
+            bg="#176b35",
+            fg="#ffffff",
+            activebackground="#12552a",
+            activeforeground="#ffffff",
+            font=("Segoe UI", 10, "bold"),
+            relief="flat",
+            padx=12,
+            pady=7,
+            cursor="hand2",
         )
-        button.pack(anchor="w", pady=(0, 4))
+        button.pack(side="left", anchor="w")
         self.run_buttons.append(button)
+        tk.Button(
+            actions,
+            text="Ouvrir le dossier de résultats",
+            command=self._open_output_directory,
+            bg="#0a4f8a",
+            fg="#ffffff",
+            activebackground="#073b68",
+            activeforeground="#ffffff",
+            font=("Segoe UI", 10, "bold"),
+            relief="flat",
+            padx=12,
+            pady=7,
+            cursor="hand2",
+        ).pack(side="left", padx=(8, 0), anchor="w")
 
     def _create_input_card(self, kind, parent):
         """Construit une carte de sélection ou de dépôt pour un fichier CSV."""
