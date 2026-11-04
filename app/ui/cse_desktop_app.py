@@ -13,7 +13,7 @@ from tkinter import ttk
 
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
-from services.csv_files import read_csv
+from services.csv_files import latest_valid_csv_in_directories, read_csv
 from services.paths import bundled_resource, project_root
 from services.swile_service import (
     WORK_LOCATION_CONFIG_PATH,
@@ -356,13 +356,23 @@ class CSEFileManager(TkinterDnD.Tk):
             anchor="e",
             fg="#555555",
         ).pack(side="right", fill="x", expand=True, padx=(8, 0))
-        previous_export_section = tk.LabelFrame(
+        self.previous_export_expanded = tk.BooleanVar(value=False)
+        self.previous_export_toggle = ttk.Checkbutton(
             active_directory_optional,
+            text="Afficher le complément de configuration facultatif",
+            variable=self.previous_export_expanded,
+            command=self._toggle_previous_export_section,
+        )
+        self.previous_export_toggle.pack(anchor="w", pady=(0, 4))
+        previous_export_container = tk.Frame(active_directory_optional)
+        previous_export_container.pack(fill="x")
+        previous_export_section = tk.LabelFrame(
+            previous_export_container,
             text="Complément de configuration facultatif",
             padx=10,
             pady=8,
         )
-        previous_export_section.pack(fill="x", pady=(0, 8))
+        self.previous_export_section = previous_export_section
         tk.Label(
             previous_export_section,
             text=(
@@ -461,6 +471,7 @@ class CSEFileManager(TkinterDnD.Tk):
         self._load_work_location_mapping()
         self._load_active_directory_config()
         self._refresh_file_labels()
+        self._set_previous_export_section_default_visibility()
         self.after(100, self._position_main_pane_sash)
 
     def _position_main_pane_sash(self):
@@ -535,6 +546,29 @@ class CSEFileManager(TkinterDnD.Tk):
             self.active_directory_config_toggle.configure(
                 text="Afficher la configuration Active Directory"
             )
+
+    def _toggle_previous_export_section(self):
+        """Affiche ou masque le complément d’export précédent."""
+        if self.previous_export_expanded.get():
+            if not self.previous_export_section.winfo_manager():
+                self.previous_export_section.pack(
+                    fill="x", pady=(0, 8)
+                )
+            self.previous_export_toggle.configure(
+                text="Masquer le complément de configuration facultatif"
+            )
+        else:
+            self.previous_export_section.pack_forget()
+            self.previous_export_toggle.configure(
+                text="Afficher le complément de configuration facultatif"
+            )
+
+    def _set_previous_export_section_default_visibility(self):
+        """Ouvre le complément uniquement si aucun export précédent n’existe."""
+        self.previous_export_expanded.set(
+            self._current_file("active_directory_previous") is None
+        )
+        self._toggle_previous_export_section()
 
     def _create_work_location_mapping_editor(self, parent):
         """Construit l’éditeur graphique du mapping des lieux de travail."""
@@ -980,8 +1014,15 @@ class CSEFileManager(TkinterDnD.Tk):
     def _current_file(self, kind):
         """Sélectionne le fichier valide le plus récent pour le type demandé."""
         input_directory = self._input_directory_for_kind(kind)
+        if kind == "active_directory_previous":
+            return latest_valid_csv_in_directories(
+                (input_directory, ACTIVE_DIRECTORY_OUTPUT),
+                DELIMITERS[kind],
+                REQUIRED_COLUMNS[kind],
+            )
+        candidates = self._files_of_kind(input_directory, kind)
         return max(
-            self._files_of_kind(input_directory, kind),
+            candidates,
             key=lambda path: path.stat().st_mtime,
             default=None,
         )
@@ -1077,6 +1118,8 @@ class CSEFileManager(TkinterDnD.Tk):
                 return
 
             shutil.copy2(source, destination)
+            if kind == "active_directory_previous":
+                os.utime(destination, None)
             self.status.set(f"Fichier enregistré : {destination.name}")
             self._refresh_file_labels()
         except (OSError, UnicodeError, ValueError) as error:
@@ -1380,6 +1423,7 @@ class CSEFileManager(TkinterDnD.Tk):
 
     def _finish_run(self, stdout, stderr, returncode):
         """Rétablit l’interface et affiche le résultat ou l’erreur du traitement."""
+        completed_action = self.current_action
         if self.device_code_dialog is not None:
             if self.device_code_dialog.winfo_exists():
                 self.device_code_dialog.destroy()
@@ -1403,6 +1447,8 @@ class CSEFileManager(TkinterDnD.Tk):
             "Traitement terminé." if returncode == 0 else "Le traitement a échoué."
         )
         self._refresh_file_labels()
+        if completed_action == "active_directory" and returncode == 0:
+            self._set_previous_export_section_default_visibility()
         if returncode != 0:
             messagebox.showerror(
                 "Échec du traitement",

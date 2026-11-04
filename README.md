@@ -41,10 +41,15 @@ indications affichées dans la fenêtre et saisissez le code de vérification.
 2. Dans l’onglet **swile_active_directory**, sélectionnez le fichier Swile et
    le fichier Active Directory avec **Parcourir…**, ou déposez-les dans les
    zones prévues. Le bouton **Copier le dernier export** permet de reprendre
-   l’export Active Directory qui vient d’être généré.
+   l’export Active Directory qui vient d’être généré. Le complément facultatif
+   pour un export précédent est masqué lorsqu’un export valide est disponible;
+   il s’ouvre automatiquement si aucun export précédent n’est trouvé.
 3. Cliquez sur **Comparer les listes et préparer les ajouts Swile**.
 4. Consultez le détail du traitement dans le panneau de suivi et ouvrez le
    dossier de résultats avec le bouton situé à côté de l’action.
+
+Après chaque génération Active Directory réussie, son fichier devient
+automatiquement l’export précédent proposé pour la prochaine collecte.
 
 Le fichier Swile utilise le séparateur `;`. L’export Active Directory utilise
 le séparateur `,`.

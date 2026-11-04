@@ -24,6 +24,23 @@ def latest_input_file(input_directory, pattern, description):
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
+def latest_valid_csv_in_directories(directories, delimiter, required_columns):
+    """Retourne le CSV valide le plus récent parmi plusieurs dossiers."""
+    candidates = []
+    for directory in directories:
+        for path in Path(directory).glob("*.csv"):
+            try:
+                read_csv(path, delimiter, required_columns)
+            except (OSError, UnicodeError, ValueError):
+                continue
+            candidates.append(path)
+    return max(
+        candidates,
+        key=lambda path: path.stat().st_mtime,
+        default=None,
+    )
+
+
 def read_csv(path, delimiter, required_columns):
     """Lit un CSV et vérifie la présence de ses colonnes obligatoires."""
     with path.open("r", newline="", encoding="utf-8-sig") as csv_file:

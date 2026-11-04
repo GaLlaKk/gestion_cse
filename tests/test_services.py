@@ -7,7 +7,11 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from services import active_directory_export
-from services.csv_files import latest_input_file, read_csv
+from services.csv_files import (
+    latest_input_file,
+    latest_valid_csv_in_directories,
+    read_csv,
+)
 from services.swile_service import (
     compare_users,
     generate_additions,
@@ -676,6 +680,49 @@ class CsvFilesTests(unittest.TestCase):
             selected = latest_input_file(directory, "collaborators*.csv", "Swile")
 
             self.assertEqual(selected.name, "collaborators-new.csv")
+
+    def test_latest_valid_csv_is_selected_across_input_and_output_folders(self):
+        """Sélectionne le dernier export valide parmi les dossiers fournis."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            input_directory = root / "in"
+            output_directory = root / "out"
+            input_directory.mkdir()
+            output_directory.mkdir()
+            required_columns = ["Nom", "Email", "Identifiant", "Poste"]
+            old_path = input_directory / "export-manuel.csv"
+            old_path.write_text(
+                "Nom,Email,Identifiant,Poste\n"
+                "Ancien,ancien@example.com,ancien,Analyste\n",
+                encoding="utf-8",
+            )
+            latest_path = output_directory / "20261104_export.csv"
+            latest_path.write_text(
+                "Nom,Email,Identifiant,Poste\n"
+                "Récent,recent@example.com,recent,Analyste\n",
+                encoding="utf-8",
+            )
+            invalid_path = output_directory / "export-invalide.csv"
+            invalid_path.write_text("Nom,Email\nInvalide,x@example.com\n")
+            os.utime(old_path, (1_700_000_000, 1_700_000_000))
+            os.utime(latest_path, (1_700_000_100, 1_700_000_100))
+            os.utime(invalid_path, (1_700_000_200, 1_700_000_200))
+
+            selected = latest_valid_csv_in_directories(
+                (input_directory, output_directory),
+                ",",
+                required_columns,
+            )
+
+            self.assertEqual(selected, latest_path)
+
+            os.utime(old_path, (1_700_000_300, 1_700_000_300))
+            selected = latest_valid_csv_in_directories(
+                (input_directory, output_directory),
+                ",",
+                required_columns,
+            )
+            self.assertEqual(selected, old_path)
 
 
 class SwileServiceTests(unittest.TestCase):
