@@ -54,7 +54,7 @@ INPUT_HIGHLIGHTS = {
     "swile": ("SWILE", "#0a4f8a"),
     "active_directory": ("ACTIVE DIRECTORY", "#176b35"),
     "active_directory_previous": ("ACTIVE DIRECTORY PRECEDENT", "#0f5b7a"),
-    "template": ("MODELE SWILE", "#71f19e"),
+    "template": ("MODELE SWILE", "#176b35"),
 }
 DELIMITERS = {
     "swile": ";",
@@ -567,7 +567,7 @@ class CSEFileManager(TkinterDnD.Tk):
         actions.pack(fill="x", pady=(0, 4))
         button = tk.Button(
             actions,
-            text=label,
+            text=f"▶  {label}",
             command=lambda selected=action: self._run(selected),
             bg="#176b35",
             fg="#ffffff",
@@ -583,7 +583,7 @@ class CSEFileManager(TkinterDnD.Tk):
         self.run_buttons.append(button)
         tk.Button(
             actions,
-            text="Ouvrir le dossier de résultats",
+            text="📂  Ouvrir le dossier de résultats",
             command=self._open_output_directory,
             bg="#0a4f8a",
             fg="#ffffff",
@@ -602,19 +602,19 @@ class CSEFileManager(TkinterDnD.Tk):
 
         description = tk.Frame(card)
         description.pack(fill="x", expand=True)
-        highlight_text, highlight_background = INPUT_HIGHLIGHTS[kind]
+        highlight_text, highlight_color = INPUT_HIGHLIGHTS[kind]
         expected_file = tk.Frame(description)
         expected_file.pack(anchor="w", pady=(0, 5))
         tk.Label(
             expected_file,
-            text="FICHIER ATTENDU :",
+            text="📄  FICHIER ATTENDU :",
             font=("Segoe UI", 9, "bold"),
         ).pack(side="left", padx=(0, 4))
         tk.Label(
             expected_file,
             text=highlight_text,
-            bg=highlight_background,
-            fg="#ffffff",
+            bg="#e8edf2",
+            fg=highlight_color,
             font=("Segoe UI", 9, "bold"),
             padx=6,
             pady=2,
