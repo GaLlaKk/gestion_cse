@@ -12,6 +12,8 @@ from services.swile_service import (
     compare_users,
     generate_additions,
     generate_work_location_values,
+    load_work_location_mapping,
+    map_work_location_value,
 )
 
 
@@ -736,6 +738,110 @@ class SwileServiceTests(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
         return path
+
+    def test_work_location_mapping_uses_current_defaults_without_config(self):
+        """Vérifie le mapping existant quand le fichier de configuration manque."""
+        mapping = load_work_location_mapping(
+            self.root / "configuration-absente.json"
+        )
+
+        self.assertEqual(
+            map_work_location_value(
+                "FR Paris 145-151 rue de Courcelles", mapping
+            ),
+            "Paris 145",
+        )
+        self.assertEqual(
+            map_work_location_value("29 Avenue De La Marne", mapping),
+            "Lille 5.9",
+        )
+        self.assertEqual(
+            map_work_location_value("FR Paris 133", mapping), "Paris 133"
+        )
+        self.assertEqual(map_work_location_value("Bordeaux", mapping), "Autre")
+
+    def test_work_location_mapping_loads_custom_rules(self):
+        """Vérifie le chargement des règles personnalisées et leur normalisation."""
+        config_path = self.root / "configuration_lieux_travail.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "default_value": "Autre site",
+                    "rules": [
+                        {
+                            "patterns": [["avenue", "marne"]],
+                            "value": "Nouveau site",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        mapping = load_work_location_mapping(config_path)
+
+        self.assertEqual(
+            map_work_location_value("29 AVENUE DE LA MARNE", mapping),
+            "Nouveau site",
+        )
+        self.assertEqual(
+            map_work_location_value("Bordeaux", mapping), "Autre site"
+        )
+
+    def test_generate_work_location_values_uses_custom_configuration(self):
+        """Vérifie que la génération applique le fichier de mapping personnalisé."""
+        active_directory_path = self._write_csv(
+            "active-directory-custom-locations.csv",
+            ["Nom", "Email", "Identifiant", "Lieu de travail"],
+            [
+                {
+                    "Nom": "Ana Doe",
+                    "Email": "ana@epsilon-france.com",
+                    "Identifiant": "a1",
+                    "Lieu de travail": "Bordeaux",
+                }
+            ],
+            ",",
+        )
+        config_path = self.root / "configuration_lieux_travail.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "default_value": "Autre site",
+                    "rules": [
+                        {
+                            "patterns": [["bordeaux"]],
+                            "value": "Siège Bordeaux",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        output_path = self.output_directory / "custom-location-values.csv"
+
+        generate_work_location_values(
+            self.swile_path,
+            active_directory_path,
+            output_path,
+            "epsilon-france.com",
+            config_path,
+        )
+
+        with output_path.open(encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream, delimiter=";"))
+        self.assertEqual(
+            [row["Valeur"] for row in rows],
+            ["Siège Bordeaux", "Autre site"],
+        )
+
+    def test_work_location_mapping_rejects_invalid_configuration(self):
+        """Vérifie qu’une configuration présente mais invalide est signalée."""
+        config_path = self.root / "configuration_lieux_travail.json"
+        config_path.write_text('{"default_value": "Autre", "rules": [{}]}')
+
+        with self.assertRaisesRegex(ValueError, "règle 1"):
+            load_work_location_mapping(config_path)
 
     def test_compare_users_writes_found_and_missing_csvs(self):
         """Vérifie l’écriture des résultats de comparaison dans deux CSV."""

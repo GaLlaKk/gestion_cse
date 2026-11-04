@@ -1,5 +1,7 @@
 import csv
+import json
 from datetime import date, datetime
+from pathlib import Path
 
 from domain.normalization import (
     normalize_matricule,
@@ -10,6 +12,34 @@ from domain.matching import compare_users as match_users
 from domain.swile_additions import build_additions
 from services.csv_files import DEFAULT_TEMPLATE_FILE, read_csv
 from services.paths import bundled_resource, project_root
+
+WORK_LOCATION_CONFIG_PATH = (
+    project_root() / "configuration_lieux_travail.json"
+)
+DEFAULT_WORK_LOCATION_MAPPING = {
+    "default_value": "Autre",
+    "rules": [
+        {
+            "patterns": [
+                ["145-151 rue de courcelles"],
+                ["paris", "courcelles"],
+                ["paris", "145"],
+            ],
+            "value": "Paris 145",
+        },
+        {
+            "patterns": [
+                ["29 avenue de la marne"],
+                ["wasquehal"],
+            ],
+            "value": "Lille 5.9",
+        },
+        {
+            "patterns": [["paris", "133"]],
+            "value": "Paris 133",
+        },
+    ],
+}
 
 
 def execute_swile_action(
@@ -208,31 +238,78 @@ def generate_additions(
     )
 
 
-def map_work_location_value(work_location):
-    """Associe une adresse de travail à une valeur de site Swile."""
-    normalized_location = remove_diacritics((work_location or "").strip())
-    if not normalized_location:
-        return "Autre"
-    if (
-        "145-151 rue de courcelles" in normalized_location
-        or (
-            "paris" in normalized_location
-            and "courcelles" in normalized_location
+def load_work_location_mapping(config_path=None):
+    """Charge et valide le mapping des lieux, avec repli si le fichier manque."""
+    config_path = Path(config_path or WORK_LOCATION_CONFIG_PATH)
+    if not config_path.exists():
+        return DEFAULT_WORK_LOCATION_MAPPING
+
+    try:
+        with config_path.open(encoding="utf-8") as config_file:
+            mapping = json.load(config_file)
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            f"Configuration des lieux invalide ({config_path}) : {error}"
+        ) from error
+
+    if not isinstance(mapping, dict):
+        raise ValueError(
+            f"La configuration des lieux doit être un objet JSON : {config_path}"
         )
-        or ("paris" in normalized_location and "145" in normalized_location)
-    ):
-        return "Paris 145"
-    if (
-        "29 avenue de la marne" in normalized_location
-        or "wasquehal" in normalized_location
-    ):
-        return "Lille 5.9"
-    if (
-        "paris 133" in normalized_location
-        or ("paris" in normalized_location and "133" in normalized_location)
-    ):
-        return "Paris 133"
-    return "Autre"
+    default_value = mapping.get("default_value")
+    rules = mapping.get("rules")
+    if not isinstance(default_value, str) or not default_value.strip():
+        raise ValueError(
+            f"'default_value' doit être une chaîne non vide : {config_path}"
+        )
+    if not isinstance(rules, list):
+        raise ValueError(f"'rules' doit être une liste : {config_path}")
+
+    for index, rule in enumerate(rules, start=1):
+        if not isinstance(rule, dict):
+            raise ValueError(
+                f"La règle {index} doit être un objet : {config_path}"
+            )
+        patterns = rule.get("patterns")
+        value = rule.get("value")
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or not isinstance(patterns, list)
+            or not patterns
+        ):
+            raise ValueError(
+                f"La règle {index} doit contenir 'value' et 'patterns' : "
+                f"{config_path}"
+            )
+        for pattern in patterns:
+            if (
+                not isinstance(pattern, list)
+                or not pattern
+                or any(
+                    not isinstance(term, str) or not term.strip()
+                    for term in pattern
+                )
+            ):
+                raise ValueError(
+                    f"Chaque motif de la règle {index} doit être une liste "
+                    f"de termes non vides : {config_path}"
+                )
+    return mapping
+
+
+def map_work_location_value(work_location, mapping=None):
+    """Associe un lieu de travail à la première règle de configuration."""
+    normalized_location = remove_diacritics((work_location or "").strip())
+    mapping = mapping or load_work_location_mapping()
+    for rule in mapping["rules"]:
+        for pattern in rule["patterns"]:
+            if all(
+                remove_diacritics(term.strip()) in normalized_location
+                for term in pattern
+            ):
+                return rule["value"]
+    return mapping["default_value"]
 
 
 def generate_work_location_values(
@@ -240,8 +317,10 @@ def generate_work_location_values(
     active_directory_path,
     output_path,
     _report_domain,
+    mapping_config_path=None,
 ):
     """Crée le CSV des valeurs de lieu de travail pour chaque ligne Swile."""
+    work_location_mapping = load_work_location_mapping(mapping_config_path)
     _, swile_users = read_csv(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
@@ -310,7 +389,8 @@ def generate_work_location_values(
                             and not missing_work_location_column
                         )
                         else None
-                    )
+                    ),
+                    work_location_mapping,
                 ),
             }
         )

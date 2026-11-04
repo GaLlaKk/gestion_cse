@@ -1,0 +1,27 @@
+{
+  "description": "Règles testées dans l'ordre. Tous les termes d'un motif doivent être présents; les motifs d'une même règle sont alternatifs. La recherche ignore la casse et les accents.",
+  "default_value": "Autre",
+  "rules": [
+    {
+      "patterns": [
+        ["145-151 rue de courcelles"],
+        ["paris", "courcelles"],
+        ["paris", "145"]
+      ],
+      "value": "Paris 145"
+    },
+    {
+      "patterns": [
+        ["29 avenue de la marne"],
+        ["wasquehal"]
+      ],
+      "value": "Lille 5.9"
+    },
+    {
+      "patterns": [
+        ["paris", "133"]
+      ],
+      "value": "Paris 133"
+    }
+  ]
+}

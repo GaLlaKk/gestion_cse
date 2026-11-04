@@ -71,9 +71,14 @@ fichier/traitement pour le flux Swile.
     `Lieu de travail` dans l’export Active Directory.
   - Toutes les lignes du CSV Swile sont conservées dans ce fichier (pas de
     filtre de domaine ni d’exclusion `.ext`).
-  - Mapping actuellement appliqué : adresses Courcelles -> `Paris 145`,
-    adresses Wasquehal / avenue de la Marne -> `Lille 5.9`, mentions de
-    Paris 133 -> `Paris 133`, sinon `Autre`.
+  - Le mapping de lieu est lu depuis
+    `configuration_lieux_travail.json` à la racine du projet. Les règles sont
+    évaluées dans l’ordre; les termes d’un motif sont tous requis et les motifs
+    d’une règle sont alternatifs. Si le fichier est absent, les valeurs
+    intégrées restent Courcelles -> `Paris 145`, Wasquehal / avenue de la
+    Marne -> `Lille 5.9`, Paris 133 -> `Paris 133`, sinon `Autre`.
+    Les archives d’exécutables incluent ce fichier à la racine, à côté de
+    l’application.
 - `domain/normalization.py`
   - `active_directory_keys` normalise le login de `Identifiant` pour les
     rapprochements. L’export garde le login original dans `Matricule`; le nom
