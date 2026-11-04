@@ -1,0 +1,158 @@
+name: Build and release Gestion CSE
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: python -m pip install -r requirements-build.txt
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            data_separator: ";"
+          - platform: macos
+            runner: macos-13
+            data_separator: ":"
+          - platform: linux
+            runner: ubuntu-24.04
+            data_separator: ":"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: python -m pip install -r requirements-build.txt
+
+      - name: Build desktop executable
+        run: >-
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name GestionCSE
+          --collect-all tkinterdnd2
+          --add-data
+          "swile_active_directory/in/collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv${{ matrix.data_separator }}swile_active_directory/in"
+          cse_desktop_app.py
+
+      - name: Add runtime instructions (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          @'
+          Lancer GestionCSE.exe.
+
+          Le modèle CSV Swile est embarqué dans l'exécutable.
+          Pour générer l'export Active Directory, placez
+          liste_salarie_active_directory.config.json à côté de l'exécutable.
+          Ce fichier de configuration n'est pas inclus dans l'artefact.
+
+          Les fichiers d'entrée et de sortie restent à côté de l'exécutable,
+          dans swile_active_directory\in et swile_active_directory\out.
+          '@ | Set-Content dist\LIRE_AVANT_LANCEMENT.txt -Encoding utf8
+
+      - name: Add runtime instructions (macOS and Linux)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          cat > dist/LIRE_AVANT_LANCEMENT.txt << 'EOF'
+          Lancer GestionCSE.
+
+          Le modèle CSV Swile est embarqué dans l'exécutable.
+          Pour générer l'export Active Directory, placez
+          liste_salarie_active_directory.config.json à côté de l'exécutable.
+          Ce fichier de configuration n'est pas inclus dans l'artefact.
+
+          Les fichiers d'entrée et de sortie restent à côté de l'exécutable,
+          dans swile_active_directory/in et swile_active_directory/out.
+          EOF
+
+      - name: Package executable (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Compress-Archive `
+            -Path dist\GestionCSE.exe, dist\LIRE_AVANT_LANCEMENT.txt `
+            -DestinationPath artifacts\GestionCSE-windows-${{ runner.arch }}.zip `
+            -Force
+
+      - name: Package executable (macOS and Linux)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          zip -j "artifacts/GestionCSE-${{ matrix.platform }}-${{ runner.arch }}.zip" \
+            dist/GestionCSE dist/LIRE_AVANT_LANCEMENT.txt
+
+      - name: Upload platform package
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionCSE-${{ matrix.platform }}
+          path: artifacts/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish release assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download platform packages
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: GestionCSE-*
+          merge-multiple: true
+
+      - name: Publish packages on GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/*.zip --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/*.zip \
+              --title "Gestion CSE $RELEASE_TAG" \
+              --generate-notes
+          fi

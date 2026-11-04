@@ -21,9 +21,12 @@ racine sont des points d’entrée conservés pour lancer les traitements.
 - `app/ui/cse_desktop_app.py` fournit l’interface Tkinter.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
-- `.github/workflows/build-desktop-executables.yml` exécute les tests unitaires avant
-  de construire les exécutables Windows, macOS et Linux; les artefacts incluent
-  le modèle Swile, mais pas la configuration Active Directory.
+- `.github/workflows/release-gestion-cse.yml` exécute les tests unitaires avant
+  de construire les exécutables Windows, macOS et Linux pour les tags `v*`,
+  puis publie les archives ZIP sur la release GitHub; les artefacts incluent le
+  modèle Swile, mais pas la configuration Active Directory. Une exécution
+  manuelle depuis une branche permet de valider tests et builds sans publier
+  de release.
 - `run_cse_desktop_app.ps1` lance l’application avec l’interpréteur local
   `.venv/Scripts/python.exe`; `debug/debug_deploy.ps1` crée cet environnement
   et installe `requirements.txt`.
