@@ -25,6 +25,47 @@ CSV_HEADERS = (
     "Manager Email",
     "Collaborateurs à charge",
 )
+DEFAULT_ESTIMATED_PEOPLE = 500
+PROGRESS_EXPORT_COLUMNS = {"Nom", "Email", "Identifiant", "Poste"}
+
+
+def estimate_previous_export_count(output_dir):
+    """Estime le volume de la collecte d’après le dernier export valide."""
+    logger = logging.getLogger(__name__)
+    previous_exports = sorted(
+        Path(output_dir).glob("*_liste_salarie_active_directory.csv"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for previous_export in previous_exports:
+        try:
+            _, rows = read_csv(
+                previous_export,
+                ",",
+                PROGRESS_EXPORT_COLUMNS,
+            )
+        except (OSError, UnicodeError, ValueError) as error:
+            logger.warning(
+                "Impossible d’utiliser %s pour estimer la progression : %s",
+                previous_export,
+                error,
+            )
+            continue
+        if rows:
+            return len(rows)
+    logger.info(
+        "Aucun export précédent exploitable pour l’estimation; "
+        "utilisation de la valeur par défaut de %s personnes.",
+        DEFAULT_ESTIMATED_PEOPLE,
+    )
+    return DEFAULT_ESTIMATED_PEOPLE
+
+
+def next_progress_estimate(current_estimate, completed_count):
+    """Augmente la cible de progression lorsqu’elle est atteinte."""
+    if completed_count < current_estimate:
+        return current_estimate
+    return completed_count + max(100, current_estimate // 2)
 
 
 class LevelIconFormatter(logging.Formatter):
@@ -37,11 +78,13 @@ class LevelIconFormatter(logging.Formatter):
     }
 
     def format(self, record):
+        """Préfixe le message journalisé avec l’icône du niveau."""
         icon = self.LEVEL_ICONS.get(record.levelno, "•")
         return f"{icon} {super().format(record)}"
 
 
 def _download_user_photo(user_id, identifier, photo_directory, request_graph):
+    """Télécharge et met en cache la photo Graph d’un utilisateur."""
     logger = logging.getLogger(__name__)
     account_reference = identifier or user_id
     safe_identifier = "".join(
@@ -88,10 +131,12 @@ def _download_user_photo(user_id, identifier, photo_directory, request_graph):
 
 
 def get_config_path():
+    """Retourne le chemin du fichier de configuration Active Directory."""
     return project_root() / "liste_salarie_active_directory.config.json"
 
 
 def validate_config(config, config_path):
+    """Vérifie les champs obligatoires de la configuration Active Directory."""
     if not isinstance(config, dict):
         raise ValueError(
             f"La configuration doit être un objet JSON dans {config_path}."
@@ -125,6 +170,7 @@ def validate_config(config, config_path):
 
 
 def save_active_directory_config(contents, config_path=None):
+    """Valide puis remplace atomiquement le fichier de configuration AD."""
     config_path = Path(config_path or get_config_path())
     config = json.loads(contents)
     validate_config(config, config_path)
@@ -150,6 +196,7 @@ def save_active_directory_config(contents, config_path=None):
 
 
 def initialize_output(config_path):
+    """Prépare les dossiers, le journal et le préfixe de cette exécution."""
     application_directory = config_path.parent
     output_dir = application_directory / "liste_salarie_active_directory" / "out"
     log_dir = application_directory / "log"
@@ -180,6 +227,7 @@ def initialize_output(config_path):
 
 
 def _csv_row_from_user_entry(user_entry):
+    """Convertit un compte Graph en champs de l’export Active Directory."""
     return {
         "Nom": user_entry["identity"]["name"],
         "Email": user_entry["identity"]["email"],
@@ -198,11 +246,16 @@ def run_active_directory_export(
     on_device_code=None,
     download_photos=False,
     previous_export_path=None,
+    on_progress=None,
 ):
+    """Collecte la hiérarchie Graph et publie le CSV après réussite complète."""
     if previous_export_path is not None:
         previous_export_path = Path(previous_export_path)
     config_path = get_config_path()
     logger, output_dir, date_prefix = initialize_output(config_path)
+    estimated_people = estimate_previous_export_count(output_dir)
+    if on_progress is not None:
+        on_progress(0, estimated_people, "connecting")
     try:
         with config_path.open(encoding="utf-8") as config_file:
             config = json.load(config_file)
@@ -224,6 +277,7 @@ def run_active_directory_export(
     REQUEST_TIMEOUT_SECONDS = 30
 
     def is_external_epsilon_email(email):
+        """Reconnaît l’adresse externe exclue du domaine de rapport."""
         return (
             email is not None
             and email.casefold().endswith(f".ext@{REPORT_DOMAIN}")
@@ -255,10 +309,13 @@ def run_active_directory_export(
         logger.exception("Échec de l’authentification Microsoft.")
         raise
     logger.info("Authentification Microsoft réussie.")
+    if on_progress is not None:
+        on_progress(0, estimated_people, "collecting")
 
     headers = {"Authorization": f"Bearer {result['access_token']}"}
 
     def request_graph(url):
+        """Interroge Microsoft Graph en respectant les limites de débit."""
         for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
             response = requests.get(
                 url,
@@ -294,6 +351,7 @@ def run_active_directory_export(
             time.sleep(delay)
 
     def fetch_user_record(user_id_or_email):
+        """Récupère un compte, son responsable et ses rapports directs."""
         user_url = (
             "https://graph.microsoft.com/v1.0/users/"
             f"{user_id_or_email}?$select=id,displayName,mail,userPrincipalName,"
@@ -367,17 +425,21 @@ def run_active_directory_export(
         return user_entry, direct_reports_data, is_epsilon_user
 
     def add_exported_keys(keys_by_type, row):
+        """Ajoute les clés d’identification d’une ligne déjà exportée."""
         for key_type, key in active_directory_keys(row).items():
             if key:
                 keys_by_type[key_type].add(key)
 
     def has_exported_key(keys_by_type, row):
+        """Indique si une ligne est déjà présente selon ses clés métier."""
         return any(
             key and key in keys_by_type[key_type]
             for key_type, key in active_directory_keys(row).items()
         )
 
     def fetch_hierarchy(writer):
+        """Parcourt la hiérarchie Graph et écrit les comptes retenus."""
+        nonlocal estimated_people
         exported_count = 0
         processed_ids = set()
         pending = [(START_USER_EMAIL, True, 0)]
@@ -438,6 +500,16 @@ def run_active_directory_export(
                         writer.writerow([row[column] for column in CSV_HEADERS])
                         add_exported_keys(exported_keys_by_type, row)
                         exported_count += 1
+                        if on_progress is not None:
+                            estimated_people = next_progress_estimate(
+                                estimated_people,
+                                exported_count,
+                            )
+                            on_progress(
+                                exported_count,
+                                estimated_people,
+                                "collecting",
+                            )
 
                     for report in direct_reports_data:
                         mail = report.get("mail")
@@ -470,6 +542,8 @@ def run_active_directory_export(
         return exported_count, exported_keys_by_type
 
     def append_visible_previous_users(writer, exported_keys_by_type):
+        """Ajoute les comptes encore visibles absents de l’export précédent."""
+        nonlocal estimated_people
         if previous_export_path is None:
             logger.info("Aucun fichier d’export précédent fourni.")
             return 0
@@ -550,6 +624,17 @@ def run_active_directory_export(
             writer.writerow([row[column] for column in CSV_HEADERS])
             add_exported_keys(exported_keys_by_type, row)
             appended_count += 1
+            if on_progress is not None:
+                total_exported = exported_count + appended_count
+                estimated_people = next_progress_estimate(
+                    estimated_people,
+                    total_exported,
+                )
+                on_progress(
+                    total_exported,
+                    estimated_people,
+                    "collecting",
+                )
 
         logger.info(
             "Comparaison export précédent : %s compte(s) encore visible(s), %s ajouté(s).",
@@ -600,10 +685,14 @@ def run_active_directory_export(
         appended_from_previous,
         csv_path,
     )
+    if on_progress is not None:
+        total_exported = exported_count + appended_from_previous
+        on_progress(total_exported, total_exported, "complete")
     return csv_path
 
 
 def main():
+    """Lance la génération de l’export depuis la ligne de commande."""
     run_active_directory_export()
 
 

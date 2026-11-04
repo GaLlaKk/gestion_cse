@@ -10,6 +10,7 @@ APPLICATION_DIRECTORY = ROOT_DIRECTORY / "swile_active_directory"
 
 
 def main():
+    """Analyse les options CLI et exécute l’action Swile demandée."""
     input_directory = APPLICATION_DIRECTORY / "in"
     output_directory = APPLICATION_DIRECTORY / "out"
     actions_needing_swile = {"compare", "additions", "all", "location_values"}

@@ -7,6 +7,7 @@ DEFAULT_TEMPLATE_FILE = (
 
 
 def latest_input_file(input_directory, pattern, description):
+    """Retourne le fichier d’entrée correspondant au motif le plus récent."""
     candidates = list(input_directory.glob(pattern))
     if pattern == "collaborators*.csv":
         candidates = [
@@ -24,6 +25,7 @@ def latest_input_file(input_directory, pattern, description):
 
 
 def read_csv(path, delimiter, required_columns):
+    """Lit un CSV et vérifie la présence de ses colonnes obligatoires."""
     with path.open("r", newline="", encoding="utf-8-sig") as csv_file:
         reader = csv.DictReader(csv_file, delimiter=delimiter)
         fieldnames = reader.fieldnames

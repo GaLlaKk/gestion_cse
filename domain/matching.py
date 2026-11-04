@@ -6,6 +6,7 @@ from domain.normalization import (
 
 
 def compare_users(swile_users, active_directory_users):
+    """Sépare les salariés Swile trouvés ou absents dans l’export AD."""
     active_directory_keys_by_type = {
         "email": set(),
         "matricule": set(),

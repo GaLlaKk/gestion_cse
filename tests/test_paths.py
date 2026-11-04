@@ -10,6 +10,7 @@ from services.paths import bundled_resource, project_root
 
 class RuntimePathTests(unittest.TestCase):
     def test_frozen_project_root_is_executable_directory(self):
+        """Vérifie que le mode exécutable utilise le dossier de l’application."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             executable = Path(temporary_directory) / "GestionCSE.exe"
             with (
@@ -21,6 +22,7 @@ class RuntimePathTests(unittest.TestCase):
                 )
 
     def test_bundled_resource_uses_pyinstaller_extraction_directory(self):
+        """Vérifie que les ressources gelées utilisent le dossier PyInstaller."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             with patch.object(sys, "_MEIPASS", temporary_directory, create=True):
                 self.assertEqual(

@@ -8,6 +8,7 @@ from domain.normalization import (
 
 
 def build_additions(swile_users, active_directory_users, report_domain):
+    """Prépare les ajouts Swile et compte les exclusions métier appliquées."""
     existing_keys = {"email": set(), "matricule": set(), "name": set()}
     for user in swile_users:
         email = (user.get("Email") or "").strip().casefold()

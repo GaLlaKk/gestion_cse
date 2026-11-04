@@ -22,6 +22,7 @@ def execute_swile_action(
     ignored_output_path=None,
     report_domain="epsilon-france.com",
 ):
+    """Orchestre comparaison, ajouts Swile ou génération des lieux."""
     root = project_root()
     output_directory = output_directory or (
         root / "swile_active_directory" / "out"
@@ -113,6 +114,7 @@ def execute_swile_action(
 
 
 def compare_users(swile_path, active_directory_path, output_directory):
+    """Compare les CSV Swile et AD puis écrit les fichiers trouvés et absents."""
     swile_columns, swile_users = read_csv(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
@@ -149,6 +151,7 @@ def generate_additions(
     report_domain,
     ignored_output_path=None,
 ):
+    """Génère les CSV d’ajouts Swile et d’ajouts ignorés."""
     _, swile_users = read_csv(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
@@ -206,6 +209,7 @@ def generate_additions(
 
 
 def map_work_location_value(work_location):
+    """Associe une adresse de travail à une valeur de site Swile."""
     normalized_location = remove_diacritics((work_location or "").strip())
     if not normalized_location:
         return "Autre"
@@ -237,6 +241,7 @@ def generate_work_location_values(
     output_path,
     _report_domain,
 ):
+    """Crée le CSV des valeurs de lieu de travail pour chaque ligne Swile."""
     _, swile_users = read_csv(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )

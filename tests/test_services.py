@@ -17,6 +17,7 @@ from services.swile_service import (
 
 class ActiveDirectoryConfigTests(unittest.TestCase):
     def test_save_valid_config_atomically_replaces_file(self):
+        """Vérifie la sauvegarde et le remplacement atomique d’une configuration valide."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             config_path = Path(temporary_directory) / "config.json"
             config_path.write_text("ancienne configuration", encoding="utf-8")
@@ -43,6 +44,7 @@ class ActiveDirectoryConfigTests(unittest.TestCase):
             )
 
     def test_invalid_config_does_not_replace_existing_file(self):
+        """Vérifie qu’une configuration invalide ne remplace pas le fichier existant."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             config_path = Path(temporary_directory) / "config.json"
             original_contents = "configuration existante"
@@ -59,6 +61,7 @@ class ActiveDirectoryConfigTests(unittest.TestCase):
             self.assertEqual(list(config_path.parent.glob("*.tmp")), [])
 
     def test_config_validation_rejects_missing_required_setting(self):
+        """Vérifie le rejet d’un paramètre obligatoire absent."""
         config = {
             "start_user_email": "user@example.com",
             "client_id": "client-id",
@@ -73,7 +76,59 @@ class ActiveDirectoryConfigTests(unittest.TestCase):
 
 
 class ActiveDirectoryExportTests(unittest.TestCase):
+    def test_progress_estimate_uses_previous_export_volume(self):
+        """Vérifie que l’estimation reprend le volume du dernier export."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_directory = Path(temporary_directory)
+            export_path = (
+                output_directory / "20261028_liste_salarie_active_directory.csv"
+            )
+            with export_path.open(
+                "w", newline="", encoding="utf-8"
+            ) as stream:
+                writer = csv.DictWriter(
+                    stream,
+                    fieldnames=["Nom", "Email", "Identifiant", "Poste"],
+                )
+                writer.writeheader()
+                writer.writerows(
+                    [
+                        {
+                            "Nom": f"User {index}",
+                            "Email": f"user{index}@example.com",
+                            "Identifiant": f"user{index}",
+                            "Poste": "Analyste",
+                        }
+                        for index in range(3)
+                    ]
+                )
+
+            self.assertEqual(
+                active_directory_export.estimate_previous_export_count(
+                    output_directory
+                ),
+                3,
+            )
+
+    def test_progress_estimate_defaults_and_grows_when_surpassed(self):
+        """Vérifie la cible par défaut et son augmentation en cas de dépassement."""
+        self.assertEqual(
+            active_directory_export.estimate_previous_export_count(
+                Path("dossier-inexistant")
+            ),
+            500,
+        )
+        self.assertEqual(
+            active_directory_export.next_progress_estimate(500, 500),
+            750,
+        )
+        self.assertEqual(
+            active_directory_export.next_progress_estimate(500, 120),
+            500,
+        )
+
     def test_log_is_rotated_for_each_export_run(self):
+        """Vérifie que chaque exécution écrit dans un nouveau journal."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             config_path = Path(temporary_directory) / "config.json"
             first_logger, _, _ = active_directory_export.initialize_output(
@@ -102,6 +157,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     handler.close()
 
     def test_photo_is_downloaded_once_and_reused_from_cache(self):
+        """Vérifie le téléchargement initial et la réutilisation de la photo en cache."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             photo_directory = Path(temporary_directory) / "photos"
             response = Mock(status_code=200, content=b"photo-bytes")
@@ -136,6 +192,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             )
 
     def test_missing_photo_is_not_written(self):
+        """Vérifie qu’une réponse Graph 404 ne crée pas de fichier photo."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             photo_directory = Path(temporary_directory) / "photos"
             response = Mock(status_code=404)
@@ -157,6 +214,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             request_graph.assert_called_once()
 
     def test_photo_filename_sanitizes_windows_path_characters(self):
+        """Vérifie la suppression des caractères interdits dans le nom de photo."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             photo_directory = Path(temporary_directory) / "photos"
             response = Mock(status_code=200, content=b"photo-bytes")
@@ -173,6 +231,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             self.assertEqual(photo_path.name, "user_name_user-id.jpg")
 
     def test_device_code_is_forwarded_to_callback(self):
+        """Vérifie que l’URL et le code d’appareil sont transmis au callback."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             config_path = Path(temporary_directory) / "config.json"
             config_path.write_text(
@@ -230,6 +289,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             )
 
     def test_export_writes_rows_to_temporary_csv_before_publishing(self):
+        """Vérifie l’écriture temporaire des lignes avant publication du CSV."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             config_path = root / "config.json"
@@ -253,14 +313,17 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 "access_token": "token"
             }
             logger = Mock()
+            progress_updates = []
 
             def graph_response(status_code=200, payload=None):
+                """Construit une réponse Graph simulée pour le scénario."""
                 response = Mock(status_code=status_code)
                 response.json.return_value = payload
                 response.raise_for_status.return_value = None
                 return response
 
             def request_graph(url, **_kwargs):
+                """Fournit les réponses Graph attendues par la collecte simulée."""
                 if "/users/start@example.com?" in url:
                     return graph_response(
                         payload={
@@ -305,7 +368,11 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     side_effect=request_graph,
                 ),
             ):
-                result_path = active_directory_export.run_active_directory_export()
+                result_path = active_directory_export.run_active_directory_export(
+                    on_progress=lambda completed, estimate, phase: (
+                        progress_updates.append((completed, estimate, phase))
+                    )
+                )
 
             self.assertEqual(result_path, final_path)
             logger.info.assert_any_call(
@@ -318,8 +385,18 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             self.assertEqual(rows[0]["Email"], "start@example.com")
             self.assertEqual(rows[0]["Lieu de travail"], "Paris")
             self.assertEqual(list(output_directory.glob("*.tmp")), [])
+            self.assertEqual(
+                progress_updates,
+                [
+                    (0, 500, "connecting"),
+                    (0, 500, "collecting"),
+                    (1, 500, "collecting"),
+                    (1, 1, "complete"),
+                ],
+            )
 
     def test_export_appends_visible_users_from_previous_export(self):
+        """Vérifie l’ajout des comptes encore visibles absents de l’export."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             config_path = root / "config.json"
@@ -372,12 +449,14 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             logger = Mock()
 
             def graph_response(status_code=200, payload=None):
+                """Construit une réponse Graph simulée pour le scénario."""
                 response = Mock(status_code=status_code)
                 response.json.return_value = payload
                 response.raise_for_status.return_value = None
                 return response
 
             def request_graph(url, **_kwargs):
+                """Fournit les réponses Graph prévues pour les utilisateurs."""
                 if "/users/start@example.com?" in url:
                     return graph_response(
                         payload={
@@ -448,6 +527,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             )
 
     def test_export_does_not_append_missing_users_from_previous_export(self):
+        """Vérifie que les comptes absents de Graph ne sont pas ajoutés."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             config_path = root / "config.json"
@@ -497,12 +577,14 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             logger = Mock()
 
             def graph_response(status_code=200, payload=None):
+                """Construit une réponse Graph simulée pour le scénario."""
                 response = Mock(status_code=status_code)
                 response.json.return_value = payload
                 response.raise_for_status.return_value = None
                 return response
 
             def request_graph(url, **_kwargs):
+                """Fournit les réponses Graph prévues, dont le compte absent."""
                 if "/users/start@example.com?" in url:
                     return graph_response(
                         payload={
@@ -557,6 +639,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
 
 class CsvFilesTests(unittest.TestCase):
     def test_read_csv_accepts_utf8_bom_and_checks_required_columns(self):
+        """Vérifie la lecture d’un CSV UTF-8 BOM et le contrôle des colonnes."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "swile.csv"
             path.write_text(
@@ -572,6 +655,7 @@ class CsvFilesTests(unittest.TestCase):
                 read_csv(path, ";", {"Nom"})
 
     def test_latest_input_skips_template_and_generated_results(self):
+        """Vérifie la sélection d’entrée sans modèle ni résultat généré."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             valid_files = (
@@ -593,6 +677,7 @@ class CsvFilesTests(unittest.TestCase):
 
 class SwileServiceTests(unittest.TestCase):
     def setUp(self):
+        """Prépare les CSV de test partagés par les tests du service Swile."""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
         self.input_directory = self.root / "in"
@@ -638,9 +723,11 @@ class SwileServiceTests(unittest.TestCase):
         )
 
     def tearDown(self):
+        """Supprime le dossier temporaire créé pour le test."""
         self.temporary_directory.cleanup()
 
     def _write_csv(self, name, fieldnames, rows, delimiter):
+        """Écrit un CSV de test dans le dossier d’entrée temporaire."""
         path = self.input_directory / name
         with path.open("w", newline="", encoding="utf-8-sig") as stream:
             writer = csv.DictWriter(
@@ -651,6 +738,7 @@ class SwileServiceTests(unittest.TestCase):
         return path
 
     def test_compare_users_writes_found_and_missing_csvs(self):
+        """Vérifie l’écriture des résultats de comparaison dans deux CSV."""
         found_path, missing_path, found_count, missing_count = compare_users(
             self.swile_path,
             self.active_directory_path,
@@ -666,6 +754,7 @@ class SwileServiceTests(unittest.TestCase):
         self.assertEqual(missing_rows[0]["Email"], "zoe@example.net")
 
     def test_generate_additions_preserves_original_identifier(self):
+        """Vérifie que l’ajout conserve le matricule AD d’origine."""
         template_path = self._write_csv(
             "template.csv", ["Prénom", "Nom", "Email", "Matricule"], [], ";"
         )
@@ -687,6 +776,7 @@ class SwileServiceTests(unittest.TestCase):
         self.assertEqual(rows[0]["Matricule"], "J-2")
 
     def test_generate_work_location_values_uses_expected_value_mapping(self):
+        """Vérifie les correspondances d’adresses vers les sites Swile."""
         swile_path = self._write_csv(
             "swile-locations.csv",
             ["Prénom", "Nom", "Email", "Matricule"],
@@ -792,6 +882,7 @@ class SwileServiceTests(unittest.TestCase):
         self.assertEqual(rows[0]["E-mail"], "alice@epsilon-france.com")
 
     def test_generate_work_location_values_handles_missing_column(self):
+        """Vérifie la valeur de repli quand le CSV AD n’a pas le lieu."""
         swile_path = self._write_csv(
             "swile-no-location.csv",
             ["Prénom", "Nom", "Email", "Matricule"],
@@ -853,6 +944,7 @@ class SwileServiceTests(unittest.TestCase):
         )
 
     def test_generate_work_location_values_keeps_all_swile_rows(self):
+        """Vérifie que la génération conserve toutes les lignes Swile."""
         swile_path = self._write_csv(
             "swile-all-kept.csv",
             ["Prénom", "Nom", "Email", "Matricule"],

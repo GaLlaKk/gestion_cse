@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import shutil
 import threading
 import tkinter as tk
@@ -75,52 +75,136 @@ ACTIVE_DIRECTORY_CONFIG_FIELDS = (
 
 class _OutputWriter:
     def __init__(self, app):
+        """Relie les sorties du traitement au panneau de résultats Tkinter."""
         self.app = app
         self.parts = []
 
     def write(self, text):
+        """Mémorise le texte et programme son affichage dans l’interface."""
         if text:
             self.parts.append(text)
             self.app.after(0, self.app._append_output, text)
         return len(text)
 
     def flush(self):
+        """Fournit l’opération attendue par les flux de sortie."""
         pass
 
     def getvalue(self):
+        """Retourne l’ensemble du texte écrit pendant le traitement."""
         return "".join(self.parts)
 
 
 class CSEFileManager(TkinterDnD.Tk):
     def __init__(self):
+        """Construit la fenêtre, ses onglets et les panneaux de suivi."""
         super().__init__()
         self.title("Gestion des fichiers CSE")
-        self.geometry("1050x860")
-        self.minsize(820, 720)
-        self.configure(padx=20, pady=16)
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        window_width = min(1500, max(960, int(screen_width * 0.9)))
+        window_height = min(900, max(620, int(screen_height * 0.84)))
+        self.geometry(f"{window_width}x{window_height}")
+        self.minsize(960, 620)
+        self.configure(padx=14, pady=12)
         self.file_labels = {}
         self.run_buttons = []
         self.is_running = False
+        self.current_action = None
         self.device_code_dialog = None
         self.download_photos = tk.BooleanVar(value=False)
 
+        heading = tk.Frame(self)
+        heading.pack(fill="x", pady=(0, 10))
         tk.Label(
-            self,
-            text="Préparer les fichiers CSE",
+            heading,
+            text="Gestion des fichiers CSE",
             font=("Segoe UI", 18, "bold"),
         ).pack(anchor="w")
         tk.Label(
-            self,
+            heading,
             text=(
-                "Déposez chaque CSV dans la zone correspondante ou utilisez "
-                "« Parcourir ». Les fichiers seront rangés dans le dossier in."
+                "Choisissez un traitement, vérifiez les fichiers requis, "
+                "puis lancez l’action. Vous pouvez déposer un CSV ou le "
+                "sélectionner avec « Parcourir »."
             ),
             justify="left",
-            wraplength=700,
-        ).pack(anchor="w", pady=(4, 12))
+            wraplength=1100,
+            fg="#555555",
+        ).pack(anchor="w", pady=(3, 0))
 
-        self.tabs = ttk.Notebook(self)
-        self.tabs.pack(fill="both", expand=True, pady=(4, 8))
+        self.main_pane = tk.PanedWindow(
+            self,
+            orient="horizontal",
+            sashwidth=6,
+            sashrelief="raised",
+            bd=0,
+            bg=self.cget("bg"),
+        )
+        self.main_pane.pack(fill="both", expand=True)
+        workspace = tk.Frame(self.main_pane)
+        self.tabs = ttk.Notebook(workspace)
+        self.tabs.pack(fill="both", expand=True)
+        self.main_pane.add(workspace, minsize=620, stretch="always")
+
+        results_panel = tk.LabelFrame(
+            self.main_pane,
+            text="Suivi et résultats",
+            padx=10,
+            pady=8,
+        )
+        results_panel.pack_propagate(False)
+        self.main_pane.add(results_panel, minsize=260, width=350, stretch="last")
+        tk.Label(
+            results_panel,
+            text="État",
+            anchor="w",
+            font=("Segoe UI", 10, "bold"),
+        ).pack(fill="x")
+        self.status = tk.StringVar(value="Vérification des fichiers d’entrée…")
+        tk.Label(
+            results_panel,
+            textvariable=self.status,
+            anchor="nw",
+            justify="left",
+            wraplength=320,
+            fg="#444444",
+        ).pack(fill="x", pady=(3, 10))
+        self.progress_frame = tk.Frame(results_panel)
+        self.progress_label = tk.StringVar(value="")
+        tk.Label(
+            self.progress_frame,
+            textvariable=self.progress_label,
+            anchor="w",
+            justify="left",
+            wraplength=320,
+        ).pack(fill="x", pady=(0, 3))
+        self.progress_bar = ttk.Progressbar(
+            self.progress_frame,
+            mode="indeterminate",
+            maximum=100,
+        )
+        self.progress_bar.pack(fill="x")
+        self.progress_count = 0
+        tk.Label(
+            results_panel,
+            text="Détail du dernier traitement",
+            anchor="w",
+            font=("Segoe UI", 10, "bold"),
+        ).pack(fill="x")
+        self.output = ScrolledText(
+            results_panel,
+            height=8,
+            wrap="word",
+            state="disabled",
+        )
+        self.output.pack(fill="both", expand=True, pady=(4, 8))
+        tk.Button(
+            results_panel,
+            text="Ouvrir le dossier de résultats",
+            command=self._open_output_directory,
+        ).pack(anchor="w")
+
         active_directory_tab = tk.Frame(self.tabs, padx=12, pady=12)
         swile_tab = tk.Frame(self.tabs, padx=12, pady=12)
         self.tabs.add(active_directory_tab, text="liste_salarie_active_directory")
@@ -134,19 +218,33 @@ class CSEFileManager(TkinterDnD.Tk):
             ),
             anchor="w",
             justify="left",
-            wraplength=700,
-        ).pack(fill="x", pady=(0, 8))
+            wraplength=900,
+            fg="#555555",
+        ).pack(fill="x", pady=(0, 10))
+        active_directory_columns = tk.Frame(active_directory_tab)
+        active_directory_columns.pack(fill="both", expand=True)
+        active_directory_primary = tk.Frame(active_directory_columns)
+        active_directory_primary.pack(fill="x")
+        active_directory_optional = tk.Frame(active_directory_columns)
+        active_directory_optional.pack(fill="x", pady=(4, 0))
+        generation_section = tk.LabelFrame(
+            active_directory_primary,
+            text="Générer l’export",
+            padx=10,
+            pady=8,
+        )
+        generation_section.pack(fill="x", pady=(0, 8))
         self._create_run_button(
-            active_directory_tab,
+            generation_section,
             "Générer la liste Active Directory",
             "active_directory",
         )
         ttk.Checkbutton(
-            active_directory_tab,
+            generation_section,
             text="Récupérer les photos (les photos déjà téléchargées seront conservées)",
             variable=self.download_photos,
-        ).pack(anchor="w", pady=(0, 8))
-        config_container = tk.Frame(active_directory_tab)
+        ).pack(anchor="w", pady=(3, 0))
+        config_container = tk.Frame(active_directory_primary)
         config_container.pack(fill="x", pady=(0, 8))
         self.active_directory_config_expanded = tk.BooleanVar(value=False)
         self.active_directory_config_toggle = ttk.Checkbutton(
@@ -258,22 +356,42 @@ class CSEFileManager(TkinterDnD.Tk):
             anchor="e",
             fg="#555555",
         ).pack(side="right", fill="x", expand=True, padx=(8, 0))
-        previous_export_section = tk.Frame(active_directory_tab, padx=10, pady=0)
+        previous_export_section = tk.LabelFrame(
+            active_directory_optional,
+            text="Complément de configuration facultatif",
+            padx=10,
+            pady=8,
+        )
         previous_export_section.pack(fill="x", pady=(0, 8))
-        self._create_input_card("active_directory_previous", previous_export_section)
         tk.Label(
-            active_directory_tab,
+            previous_export_section,
+            text=(
+                "Un export précédent peut servir à conserver les comptes "
+                "encore visibles qui ne sont pas retournés par la collecte."
+            ),
+            anchor="w",
+            justify="left",
+            wraplength=380,
+            fg="#555555",
+        ).pack(fill="x", pady=(0, 4))
+        self._create_input_card(
+            "active_directory_previous", previous_export_section
+        ).pack(fill="x", pady=4)
+        tk.Label(
+            active_directory_optional,
             text=f"CSV créé dans : {ACTIVE_DIRECTORY_OUTPUT}",
             anchor="w",
             justify="left",
-            wraplength=700,
+            wraplength=480,
+            fg="#555555",
         ).pack(fill="x", pady=(8, 0))
         tk.Label(
-            active_directory_tab,
+            active_directory_optional,
             text=f"Journaux : {ROOT_DIRECTORY / 'log'}",
             anchor="w",
             justify="left",
-            wraplength=700,
+            wraplength=480,
+            fg="#555555",
         ).pack(fill="x", pady=(4, 0))
 
         swile_subtabs = ttk.Notebook(swile_tab)
@@ -287,11 +405,18 @@ class CSEFileManager(TkinterDnD.Tk):
 
         compare_section = tk.Frame(compare_lists_tab, padx=10, pady=8)
         compare_section.pack(fill="both", expand=True, pady=4)
-        for kind in ("swile", "active_directory"):
-            self._create_input_card(kind, compare_section)
-
+        compare_section.columnconfigure(0, weight=1, uniform="compare")
+        compare_section.columnconfigure(1, weight=1, uniform="compare")
+        self._create_input_card("swile", compare_section).grid(
+            row=0, column=0, sticky="nsew", padx=(0, 6), pady=4
+        )
+        self._create_input_card("active_directory", compare_section).grid(
+            row=0, column=1, sticky="nsew", padx=(6, 0), pady=4
+        )
+        compare_actions = tk.Frame(compare_section)
+        compare_actions.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         self._create_run_button(
-            compare_section,
+            compare_actions,
             "Comparer les listes et préparer les ajouts Swile",
             "all",
         )
@@ -332,27 +457,22 @@ class CSEFileManager(TkinterDnD.Tk):
             fg="#555555",
         ).pack(fill="x")
 
-        footer = tk.Frame(self)
-        footer.pack(fill="x", pady=(0, 8))
-        tk.Button(
-            footer,
-            text="Ouvrir les résultats",
-            command=self._open_output_directory,
-        ).pack(side="left")
-        self.status = tk.StringVar(value="Vérification des fichiers d’entrée…")
-        tk.Label(footer, textvariable=self.status, anchor="e").pack(
-            side="right", fill="x", expand=True, padx=(12, 0)
-        )
-
-        tk.Label(self, text="Résultat du dernier traitement", anchor="w").pack(
-            fill="x"
-        )
-        self.output = ScrolledText(self, height=8, wrap="word", state="disabled")
-        self.output.pack(fill="both", expand=True, pady=(3, 0))
         self._load_active_directory_config()
         self._refresh_file_labels()
+        self.after(100, self._position_main_pane_sash)
+
+    def _position_main_pane_sash(self):
+        """Place le séparateur initial pour réserver une largeur aux résultats."""
+        pane_width = self.main_pane.winfo_width()
+        if pane_width > 0:
+            sash_position = max(
+                620,
+                min(pane_width - 260, pane_width - 360),
+            )
+            self.main_pane.sash_place(0, sash_position, 0)
 
     def _load_active_directory_config(self):
+        """Charge les paramètres AD et ouvre le panneau si la config est invalide."""
         if self.active_directory_config_dirty and not messagebox.askyesno(
             "Recharger la configuration ?",
             "Les modifications non enregistrées seront perdues. Continuer ?",
@@ -399,6 +519,7 @@ class CSEFileManager(TkinterDnD.Tk):
         self._toggle_active_directory_config()
 
     def _toggle_active_directory_config(self):
+        """Affiche ou replie les paramètres Active Directory."""
         if self.active_directory_config_expanded.get():
             if not self.active_directory_config_section.winfo_manager():
                 self.active_directory_config_section.pack(
@@ -414,6 +535,7 @@ class CSEFileManager(TkinterDnD.Tk):
             )
 
     def _save_active_directory_config(self):
+        """Valide et enregistre les champs de configuration Active Directory."""
         config = {
             field: value.get()
             for field, value in self.active_directory_config_vars.items()
@@ -440,10 +562,12 @@ class CSEFileManager(TkinterDnD.Tk):
         self.active_directory_config_status.set("Configuration enregistrée.")
 
     def _mark_active_directory_config_dirty(self, event):
+        """Signale que l’utilisateur a modifié un champ de configuration."""
         if event.widget is not None:
             self.active_directory_config_dirty = True
 
     def _create_run_button(self, parent, label, action):
+        """Crée un bouton d’action et le mémorise pour gérer son état."""
         button = tk.Button(
             parent,
             text=label,
@@ -455,11 +579,11 @@ class CSEFileManager(TkinterDnD.Tk):
         self.run_buttons.append(button)
 
     def _create_input_card(self, kind, parent):
-        card = tk.LabelFrame(parent, text=TITLES[kind], padx=10, pady=7)
-        card.pack(fill="x", pady=4)
+        """Construit une carte de sélection ou de dépôt pour un fichier CSV."""
+        card = tk.LabelFrame(parent, text=TITLES[kind], padx=10, pady=9)
 
         description = tk.Frame(card)
-        description.pack(side="left", fill="x", expand=True)
+        description.pack(fill="x", expand=True)
         highlight_text, highlight_background = INPUT_HIGHLIGHTS[kind]
         tk.Label(
             description,
@@ -471,14 +595,14 @@ class CSEFileManager(TkinterDnD.Tk):
             font=("Segoe UI", 9, "bold"),
             padx=6,
             pady=2,
-        ).pack(fill="x", pady=(0, 4))
+        ).pack(anchor="w", pady=(0, 5))
         tk.Label(
             description,
             text=INSTRUCTIONS[kind],
             anchor="w",
             justify="left",
-            wraplength=300,
-        ).pack(fill="x")
+            wraplength=420,
+        ).pack(fill="x", pady=(0, 3))
         tk.Label(
             description,
             text=(
@@ -489,53 +613,57 @@ class CSEFileManager(TkinterDnD.Tk):
             anchor="w",
             justify="left",
             fg="#555555",
-            wraplength=300,
-        ).pack(fill="x", pady=(3, 0))
+            wraplength=420,
+        ).pack(fill="x")
 
         label = tk.Label(
             description,
             text="Aucun fichier trouvé",
             anchor="w",
             fg="#555555",
-            wraplength=300,
+            wraplength=420,
         )
-        label.pack(fill="x", pady=(3, 0))
+        label.pack(fill="x", pady=(5, 0))
         self.file_labels[kind] = label
 
         drop_zone = tk.Label(
             card,
-            text="Glisser-déposer",
+            text="Déposer un CSV",
             relief="groove",
-            padx=10,
-            pady=8,
-            width=17,
+            padx=8,
+            pady=6,
         )
-        drop_zone.pack(side="right", padx=(10, 0))
+        drop_zone.pack(fill="x", expand=True, pady=(8, 0))
         drop_zone.drop_target_register(DND_FILES)
         drop_zone.dnd_bind(
             "<<Drop>>",
             lambda event, selected=kind: self._handle_drop(event, selected),
         )
+        actions = tk.Frame(card)
+        actions.pack(fill="x", pady=(6, 0))
         tk.Button(
-            card,
+            actions,
             text="Parcourir…",
             command=lambda selected=kind: self._browse(selected),
         ).pack(side="right")
 
         if kind == "active_directory":
             tk.Button(
-                card,
-                text="Copier la dernière version",
+                actions,
+                text="Copier le dernier export",
                 command=self._copy_latest_active_directory,
-            ).pack(side="right", padx=(0, 8))
+            ).pack(side="right", padx=(0, 6))
+        return card
 
     @staticmethod
     def _input_directory_for_kind(kind):
+        """Retourne le dossier de destination associé au type de fichier."""
         if kind == "active_directory_previous":
             return ACTIVE_DIRECTORY_INPUT
         return INPUT_DIRECTORY
 
     def _current_file(self, kind):
+        """Sélectionne le fichier valide le plus récent pour le type demandé."""
         input_directory = self._input_directory_for_kind(kind)
         return max(
             self._files_of_kind(input_directory, kind),
@@ -545,6 +673,7 @@ class CSEFileManager(TkinterDnD.Tk):
 
     @staticmethod
     def _files_of_kind(directory, kind):
+        """Liste les CSV lisibles qui contiennent les colonnes attendues."""
         required_columns = REQUIRED_COLUMNS[kind]
         candidates = []
         for path in directory.glob("*.csv"):
@@ -567,6 +696,7 @@ class CSEFileManager(TkinterDnD.Tk):
         return candidates
 
     def _refresh_file_labels(self):
+        """Actualise l’état des fichiers affichés et le statut général."""
         for kind, label in self.file_labels.items():
             path = self._current_file(kind)
             if path is None:
@@ -591,6 +721,7 @@ class CSEFileManager(TkinterDnD.Tk):
             self.status.set("Tous les fichiers nécessaires sont prêts.")
 
     def _browse(self, kind):
+        """Ouvre le sélecteur de fichiers pour choisir un CSV."""
         path = filedialog.askopenfilename(
             title=f"Choisir : {TITLES[kind]}",
             filetypes=[("Fichiers CSV", "*.csv"), ("Tous les fichiers", "*.*")],
@@ -599,6 +730,7 @@ class CSEFileManager(TkinterDnD.Tk):
             self._copy_input_file(Path(path), kind)
 
     def _handle_drop(self, event, kind):
+        """Valide le dépôt d’un seul fichier puis le transmet à la copie."""
         paths = self.tk.splitlist(event.data)
         if len(paths) != 1:
             messagebox.showerror(
@@ -610,6 +742,7 @@ class CSEFileManager(TkinterDnD.Tk):
         self._copy_input_file(Path(paths[0]), kind)
 
     def _copy_input_file(self, source, kind):
+        """Valide et copie un CSV vers le dossier d’entrée correspondant."""
         try:
             if not source.is_file() or source.suffix.casefold() != ".csv":
                 raise ValueError("Sélectionnez un fichier CSV existant.")
@@ -635,6 +768,7 @@ class CSEFileManager(TkinterDnD.Tk):
             messagebox.showerror("Fichier invalide", str(error), parent=self)
 
     def _copy_latest_active_directory(self):
+        """Copie le dernier export AD valide vers les fichiers Swile."""
         try:
             candidates = self._files_of_kind(
                 ACTIVE_DIRECTORY_OUTPUT, "active_directory"
@@ -672,6 +806,7 @@ class CSEFileManager(TkinterDnD.Tk):
             )
 
     def _run(self, action):
+        """Vérifie les entrées et démarre le traitement dans un thread."""
         if self.is_running:
             return
         try:
@@ -680,9 +815,11 @@ class CSEFileManager(TkinterDnD.Tk):
                     "active_directory_previous"
                 )
                 self.is_running = True
+                self.current_action = action
                 self.status.set("Collecte Active Directory en cours…")
                 self._set_run_buttons_state("disabled")
                 self._set_config_controls_state("disabled")
+                self._start_active_directory_progress()
                 self._set_output(
                     "Démarrage de la collecte Active Directory…\n"
                     "Les demandes de connexion apparaîtront ci-dessous.\n"
@@ -701,6 +838,7 @@ class CSEFileManager(TkinterDnD.Tk):
                 ).start()
                 return
 
+            self.progress_frame.pack_forget()
             swile_path = self._current_file("swile")
             active_directory_path = self._current_file("active_directory")
             actions_requiring_swile = {
@@ -729,6 +867,7 @@ class CSEFileManager(TkinterDnD.Tk):
                 return
 
             self.is_running = True
+            self.current_action = action
             self.status.set("Traitement en cours…")
             self._set_run_buttons_state("disabled")
             self._set_config_controls_state("disabled")
@@ -750,6 +889,7 @@ class CSEFileManager(TkinterDnD.Tk):
         download_photos=False,
         previous_export_path=None,
     ):
+        """Exécute l’export AD ou l’action Swile hors du thread graphique."""
         output_writer = _OutputWriter(self)
         try:
             with redirect_stdout(output_writer), redirect_stderr(output_writer):
@@ -758,6 +898,7 @@ class CSEFileManager(TkinterDnD.Tk):
                         on_device_code=self._schedule_device_code_dialog,
                         download_photos=download_photos,
                         previous_export_path=previous_export_path,
+                        on_progress=self._schedule_active_directory_progress,
                     )
                 else:
                     result = execute_swile_action(
@@ -777,6 +918,7 @@ class CSEFileManager(TkinterDnD.Tk):
             self.after(0, lambda message=error: self._finish_run("", message, 1))
 
     def _schedule_device_code_dialog(self, verification_uri, user_code):
+        """Programme l’ouverture de la fenêtre de connexion sur le thread Tk."""
         self.after(
             0,
             self._show_device_code_dialog,
@@ -784,13 +926,77 @@ class CSEFileManager(TkinterDnD.Tk):
             user_code,
         )
 
+    def _start_active_directory_progress(self):
+        """Affiche une animation pendant l’authentification Microsoft."""
+        self.progress_count = 0
+        self.progress_frame.pack(fill="x", pady=(0, 10))
+        self.progress_bar.configure(mode="indeterminate", value=0)
+        self.progress_label.set("Connexion à Microsoft…")
+        self.progress_bar.start(12)
+
+    def _schedule_active_directory_progress(
+        self,
+        completed_count,
+        estimated_total,
+        phase,
+    ):
+        """Transmet une mise à jour de progression au thread graphique."""
+        self.after(
+            0,
+            self._update_active_directory_progress,
+            completed_count,
+            estimated_total,
+            phase,
+        )
+
+    def _update_active_directory_progress(
+        self,
+        completed_count,
+        estimated_total,
+        phase,
+    ):
+        """Actualise la barre et le pourcentage de collecte Active Directory."""
+        self.progress_count = completed_count
+        if self.progress_bar.cget("mode") == "indeterminate":
+            self.progress_bar.stop()
+        self.progress_bar.configure(
+            mode="determinate",
+            maximum=max(1, estimated_total),
+        )
+        if phase == "complete":
+            self.progress_bar.configure(value=max(1, estimated_total))
+            self.progress_label.set(
+                f"Collecte terminée : {completed_count} personne(s) exportée(s)."
+            )
+            return
+
+        percentage = min(
+            99,
+            int(completed_count * 100 / max(1, estimated_total)),
+        )
+        self.progress_bar.configure(
+            value=min(completed_count, estimated_total)
+        )
+        if phase == "connecting":
+            self.progress_bar.configure(mode="indeterminate", value=0)
+            self.progress_bar.start(12)
+            self.progress_label.set(
+                f"Connexion Microsoft… estimation : environ "
+                f"{estimated_total} personnes."
+            )
+        else:
+            self.progress_label.set(
+                f"{percentage} % — {completed_count} personne(s) "
+                f"sur environ {estimated_total}."
+            )
+
     def _show_device_code_dialog(self, verification_uri, user_code):
+        """Affiche le code d’appareil et les actions pour se connecter."""
         dialog = tk.Toplevel(self)
         self.device_code_dialog = dialog
         dialog.title("Connexion Microsoft requise")
         dialog.transient(self)
         dialog.resizable(False, False)
-        dialog.grab_set()
 
         content = tk.Frame(dialog, padx=20, pady=16)
         content.pack(fill="both", expand=True)
@@ -818,6 +1024,7 @@ class CSEFileManager(TkinterDnD.Tk):
         copy_status = tk.StringVar(value="")
 
         def copy_code():
+            """Copie le code de connexion dans le presse-papiers."""
             dialog.clipboard_clear()
             dialog.clipboard_append(user_code)
             dialog.update()
@@ -838,6 +1045,7 @@ class CSEFileManager(TkinterDnD.Tk):
         )
 
     def _open_device_code_page(self, verification_uri):
+        """Ouvre la page Microsoft de connexion avec le code d’appareil."""
         if not webbrowser.open(verification_uri):
             messagebox.showerror(
                 "Ouverture impossible",
@@ -846,6 +1054,7 @@ class CSEFileManager(TkinterDnD.Tk):
             )
 
     def _finish_run(self, stdout, stderr, returncode):
+        """Rétablit l’interface et affiche le résultat ou l’erreur du traitement."""
         if self.device_code_dialog is not None:
             if self.device_code_dialog.winfo_exists():
                 self.device_code_dialog.destroy()
@@ -853,6 +1062,14 @@ class CSEFileManager(TkinterDnD.Tk):
         self.is_running = False
         self._set_run_buttons_state("normal")
         self._set_config_controls_state("normal")
+        if self.progress_bar.cget("mode") == "indeterminate":
+            self.progress_bar.stop()
+        if self.current_action == "active_directory" and returncode != 0:
+            self.progress_label.set(
+                "Collecte interrompue après "
+                f"{self.progress_count} personne(s)."
+            )
+        self.current_action = None
         result = "\n".join(part for part in (stdout.strip(), stderr.strip()) if part)
         if not result:
             result = "Traitement terminé." if returncode == 0 else "Échec du traitement."
@@ -869,26 +1086,31 @@ class CSEFileManager(TkinterDnD.Tk):
             )
 
     def _set_run_buttons_state(self, state):
+        """Active ou désactive tous les boutons de lancement."""
         for button in self.run_buttons:
             button.configure(state=state)
 
     def _set_config_controls_state(self, state):
+        """Active ou désactive les contrôles de configuration Active Directory."""
         for control in self.active_directory_config_controls:
             control.configure(state=state)
 
     def _set_output(self, text):
+        """Remplace le contenu du panneau de résultats."""
         self.output.configure(state="normal")
         self.output.delete("1.0", "end")
         self.output.insert("1.0", text)
         self.output.configure(state="disabled")
 
     def _append_output(self, text):
+        """Ajoute une sortie au panneau et fait défiler jusqu’à la fin."""
         self.output.configure(state="normal")
         self.output.insert("end", text)
         self.output.see("end")
         self.output.configure(state="disabled")
 
     def _open_output_directory(self):
+        """Ouvre le dossier de résultats correspondant à l’onglet actif."""
         output_directory = (
             ACTIVE_DIRECTORY_OUTPUT
             if self.tabs.index("current") == 0
@@ -905,6 +1127,7 @@ class CSEFileManager(TkinterDnD.Tk):
 
 
 def main():
+    """Lance la fenêtre principale et sa boucle événementielle Tkinter."""
     app = CSEFileManager()
     app.mainloop()
 

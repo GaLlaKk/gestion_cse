@@ -7,14 +7,17 @@ from domain.swile_additions import build_additions
 
 class NormalizationTests(unittest.TestCase):
     def test_normalize_name_ignores_diacritics_and_punctuation(self):
+        """Vérifie la normalisation des accents et de la ponctuation."""
         self.assertEqual(normalize_name("Élodie O'Neil"), "elodieoneil")
 
     def test_normalize_matricule_ignores_spaces_and_hyphens(self):
+        """Vérifie la normalisation des espaces et tirets du matricule."""
         self.assertEqual(normalize_matricule(" AB- 12 "), "ab12")
 
 
 class MatchingTests(unittest.TestCase):
     def test_match_swile_matricule_against_active_directory_identifiant(self):
+        """Vérifie le rapprochement du matricule Swile avec l’identifiant AD."""
         swile_user = {
             "Prénom": "Alice",
             "Nom": "Martin",
@@ -33,6 +36,7 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(missing, [])
 
     def test_match_uses_email_matricule_or_name(self):
+        """Vérifie que email, matricule ou nom peuvent établir un rapprochement."""
         swile_users = [
             {
                 "Prénom": "Alice",
@@ -79,6 +83,7 @@ class MatchingTests(unittest.TestCase):
 
 class AdditionsTests(unittest.TestCase):
     def test_build_additions_filters_existing_external_management_and_invalid(self):
+        """Vérifie les ajouts et exclusions selon les règles métier."""
         current_swile = [
             {
                 "Prénom": "Ana",

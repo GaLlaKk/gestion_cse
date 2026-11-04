@@ -19,6 +19,15 @@ racine sont des points d’entrée conservés pour lancer les traitements.
 - `domain/matching.py` compare l’export AD à l’export Swile.
 - `domain/swile_additions.py` prépare les fichiers d’ajouts et d’ajouts ignorés.
 - `app/ui/cse_desktop_app.py` fournit l’interface Tkinter.
+  La fenêtre principale est optimisée paysage avec les listes Swile et Active
+  Directory côte à côte, ainsi qu’un panneau de suivi/résultats redimensionnable
+  à côté des onglets. La configuration Active Directory reste repliable et
+  s’ouvre automatiquement si elle est absente ou invalide. Le complément
+  facultatif d’export précédent est placé sous les contrôles de génération et
+  de configuration Active Directory. L’export Active Directory transmet un
+  callback de progression à l’interface, qui affiche une barre non bloquante
+  basée sur le volume du dernier export valide (ou 500 personnes par défaut)
+  et réévalue l’estimation si le volume dépasse la cible.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
 - `.github/workflows/release-gestion-cse.yml` exécute les tests unitaires et
