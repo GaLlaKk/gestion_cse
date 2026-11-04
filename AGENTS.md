@@ -22,12 +22,12 @@ racine sont des points d’entrée conservés pour lancer les traitements.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
 - `.github/workflows/release-gestion-cse.yml` exécute les tests unitaires et
-  construit les exécutables Windows, macOS et Linux à chaque push de commit
-  sur une branche, ainsi que pour les tags `v*`; il publie les archives ZIP
-  sur une release GitHub uniquement pour les tags `v*`. Les artefacts incluent
-  le modèle Swile, mais pas la configuration Active Directory. Une exécution
-  manuelle depuis une branche permet aussi de valider tests et builds sans
-  publier de release.
+  construit les exécutables Windows, macOS Intel (runner `macos-15-intel`) et
+  Linux à chaque push de commit sur une branche, ainsi que pour les tags `v*`;
+  il publie les archives ZIP sur une release GitHub uniquement pour les tags
+  `v*`. Les artefacts incluent le modèle Swile, mais pas la configuration
+  Active Directory. Une exécution manuelle depuis une branche permet aussi de
+  valider tests et builds sans publier de release.
 - `run_cse_desktop_app.ps1` lance l’application avec l’interpréteur local
   `.venv/Scripts/python.exe`; `debug/debug_deploy.ps1` crée cet environnement
   et installe `requirements.txt`.

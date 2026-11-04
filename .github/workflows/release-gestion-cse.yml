@@ -42,7 +42,7 @@ jobs:
             runner: windows-latest
             data_separator: ";"
           - platform: macos
-            runner: macos-13
+            runner: macos-15-intel
             data_separator: ":"
           - platform: linux
             runner: ubuntu-24.04
@@ -123,7 +123,7 @@ jobs:
             dist/GestionCSE dist/LIRE_AVANT_LANCEMENT.txt
 
       - name: Upload platform package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: GestionCSE-${{ matrix.platform }}
           path: artifacts/*.zip
@@ -139,7 +139,7 @@ jobs:
       contents: write
     steps:
       - name: Download platform packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: release-assets
           pattern: GestionCSE-*
