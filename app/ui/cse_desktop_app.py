@@ -603,17 +603,22 @@ class CSEFileManager(TkinterDnD.Tk):
         description = tk.Frame(card)
         description.pack(fill="x", expand=True)
         highlight_text, highlight_background = INPUT_HIGHLIGHTS[kind]
+        expected_file = tk.Frame(description)
+        expected_file.pack(anchor="w", pady=(0, 5))
         tk.Label(
-            description,
-            text=f"FICHIER ATTENDU : {highlight_text}",
-            anchor="w",
-            justify="left",
+            expected_file,
+            text="FICHIER ATTENDU :",
+            font=("Segoe UI", 9, "bold"),
+        ).pack(side="left", padx=(0, 4))
+        tk.Label(
+            expected_file,
+            text=highlight_text,
             bg=highlight_background,
             fg="#ffffff",
             font=("Segoe UI", 9, "bold"),
             padx=6,
             pady=2,
-        ).pack(anchor="w", pady=(0, 5))
+        ).pack(side="left")
         tk.Label(
             description,
             text=INSTRUCTIONS[kind],
