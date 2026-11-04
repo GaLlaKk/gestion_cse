@@ -27,6 +27,7 @@ CSV_HEADERS = (
 )
 DEFAULT_ESTIMATED_PEOPLE = 500
 PROGRESS_EXPORT_COLUMNS = {"Nom", "Email", "Identifiant", "Poste"}
+RESUME_STATE_FILENAME = ".liste_salarie_active_directory.resume.json"
 
 
 def estimate_previous_export_count(output_dir):
@@ -242,6 +243,57 @@ def _csv_row_from_user_entry(user_entry):
     }
 
 
+def _save_resume_state(resume_state_path, state):
+    """Enregistre atomiquement l'etat de reprise de l'export AD."""
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=resume_state_path.parent,
+            prefix=f".{resume_state_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            json.dump(state, temporary_file)
+        temporary_path.replace(resume_state_path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _load_resume_state(resume_state_path, logger):
+    """Charge l'etat de reprise s'il est present et valide."""
+    if not resume_state_path.is_file():
+        return None
+    try:
+        with resume_state_path.open(encoding="utf-8") as state_file:
+            state = json.load(state_file)
+        if not isinstance(state, dict):
+            raise ValueError("format d'etat invalide")
+        required_keys = {
+            "temporary_csv_path",
+            "pending",
+            "processed_ids",
+            "exported_count",
+        }
+        missing_keys = required_keys - set(state.keys())
+        if missing_keys:
+            raise ValueError(
+                "cles manquantes: " + ", ".join(sorted(missing_keys))
+            )
+        return state
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        logger.warning(
+            "Etat de reprise ignore car invalide (%s): %s",
+            resume_state_path,
+            error,
+        )
+        return None
+
+
 def run_active_directory_export(
     on_device_code=None,
     download_photos=False,
@@ -309,19 +361,30 @@ def run_active_directory_export(
         logger.exception("Échec de l’authentification Microsoft.")
         raise
     logger.info("Authentification Microsoft réussie.")
-    if on_progress is not None:
-        on_progress(0, estimated_people, "collecting")
 
     headers = {"Authorization": f"Bearer {result['access_token']}"}
 
     def request_graph(url):
         """Interroge Microsoft Graph en respectant les limites de débit."""
         for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
-            response = requests.get(
-                url,
-                headers=headers,
-                timeout=REQUEST_TIMEOUT_SECONDS,
-            )
+            try:
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT_SECONDS,
+                )
+            except requests.RequestException as error:
+                if attempt == MAX_RATE_LIMIT_RETRIES:
+                    raise
+                delay = 2**attempt
+                logger.warning(
+                    "Erreur reseau vers Microsoft Graph (%s) ; nouvelle tentative "
+                    "dans %.1f s.",
+                    error,
+                    delay,
+                )
+                time.sleep(delay)
+                continue
             if response.status_code != 429:
                 return response
 
@@ -437,13 +500,18 @@ def run_active_directory_export(
             for key_type, key in active_directory_keys(row).items()
         )
 
-    def fetch_hierarchy(writer):
+    def fetch_hierarchy(
+        writer,
+        pending,
+        processed_ids,
+        exported_count,
+        exported_keys_by_type,
+        temporary_path,
+        resume_state_path,
+    ):
         """Parcourt la hiérarchie Graph et écrit les comptes retenus."""
         nonlocal estimated_people
-        exported_count = 0
-        processed_ids = set()
-        pending = [(START_USER_EMAIL, True, 0)]
-        exported_keys_by_type = {"email": set(), "matricule": set(), "name": set()}
+        processed_ids = set(processed_ids)
 
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS) as executor:
             while pending:
@@ -533,6 +601,26 @@ def run_active_directory_export(
                     (report_id, False, levels)
                     for report_id, levels in next_pending.items()
                 ]
+                _save_resume_state(
+                    resume_state_path,
+                    {
+                        "temporary_csv_path": str(temporary_path),
+                        "pending": [
+                            {
+                                "user_id_or_email": user_id_or_email,
+                                "is_root": is_root,
+                                "intermediate_levels": intermediate_levels,
+                            }
+                            for (
+                                user_id_or_email,
+                                is_root,
+                                intermediate_levels,
+                            ) in pending
+                        ],
+                        "processed_ids": sorted(processed_ids),
+                        "exported_count": exported_count,
+                    },
+                )
 
         logger.info(
             "Collecte terminée : %s comptes examinés, %s personnes retenues.",
@@ -648,36 +736,117 @@ def run_active_directory_export(
         "activée" if download_photos else "désactivée",
     )
     logger.info("Démarrage de la collecte de la hiérarchie Active Directory.")
+    resume_state_path = output_dir / RESUME_STATE_FILENAME
     csv_filename = f"{date_prefix}_liste_salarie_active_directory.csv"
     csv_path = output_dir / csv_filename
     temporary_path = None
+    resume_state = _load_resume_state(resume_state_path, logger)
+    exported_count = 0
+    exported_keys_by_type = {"email": set(), "matricule": set(), "name": set()}
+    pending = [(START_USER_EMAIL, True, 0)]
+    processed_ids = set()
+
+    if resume_state is not None:
+        candidate_path = Path(resume_state["temporary_csv_path"])
+        try:
+            _, resumed_rows = read_csv(
+                candidate_path,
+                ",",
+                PROGRESS_EXPORT_COLUMNS,
+            )
+            pending = [
+                (
+                    item["user_id_or_email"],
+                    item["is_root"],
+                    item["intermediate_levels"],
+                )
+                for item in resume_state["pending"]
+            ]
+            processed_ids = set(resume_state["processed_ids"])
+            for resumed_row in resumed_rows:
+                add_exported_keys(exported_keys_by_type, resumed_row)
+            exported_count = len(resumed_rows)
+            temporary_path = candidate_path
+            logger.info(
+                "Reprise d'un export interrompu : %s ligne(s) deja ecrite(s), "
+                "%s compte(s) en attente.",
+                exported_count,
+                len(pending),
+            )
+        except (KeyError, TypeError, ValueError, OSError, UnicodeError) as error:
+            logger.warning(
+                "Reprise impossible avec l'etat enregistre (%s) : %s. "
+                "Un nouvel export complet sera lance.",
+                candidate_path,
+                error,
+            )
+            temporary_path = None
+            resume_state_path.unlink(missing_ok=True)
+
+    if on_progress is not None:
+        estimated_people = max(estimated_people, exported_count)
+        on_progress(exported_count, estimated_people, "collecting")
+
+    appended_from_previous = 0
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            newline="",
-            encoding="utf-8",
-            dir=output_dir,
-            prefix=f".{csv_filename}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            writer = csv.writer(temporary_file)
-            writer.writerow(list(CSV_HEADERS))
-            exported_count, exported_keys_by_type = fetch_hierarchy(writer)
+        if temporary_path is None:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                newline="",
+                encoding="utf-8",
+                dir=output_dir,
+                prefix=f".{csv_filename}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                writer = csv.writer(temporary_file)
+                writer.writerow(list(CSV_HEADERS))
+            _save_resume_state(
+                resume_state_path,
+                {
+                    "temporary_csv_path": str(temporary_path),
+                    "pending": [
+                        {
+                            "user_id_or_email": START_USER_EMAIL,
+                            "is_root": True,
+                            "intermediate_levels": 0,
+                        }
+                    ],
+                    "processed_ids": [],
+                    "exported_count": 0,
+                },
+            )
+
+        with temporary_path.open("a", newline="", encoding="utf-8") as output_stream:
+            writer = csv.writer(output_stream)
+            exported_count, exported_keys_by_type = fetch_hierarchy(
+                writer,
+                pending,
+                processed_ids,
+                exported_count,
+                exported_keys_by_type,
+                temporary_path,
+                resume_state_path,
+            )
             appended_from_previous = append_visible_previous_users(
                 writer,
                 exported_keys_by_type,
             )
+
         temporary_path.replace(csv_path)
+        resume_state_path.unlink(missing_ok=True)
     except Exception:
         logger.exception(
             "Échec de la collecte ou de l’écriture de l’export Active Directory."
         )
-        raise
-    finally:
         if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+            logger.info(
+                "Un état de reprise est conserve dans %s pour reprendre "
+                "automatiquement au prochain lancement.",
+                resume_state_path,
+            )
+        raise
 
     logger.info(
         "Terminé : %s personnes exportées (+%s depuis l’export précédent) dans %s.",
@@ -688,6 +857,7 @@ def run_active_directory_export(
     if on_progress is not None:
         total_exported = exported_count + appended_from_previous
         on_progress(total_exported, total_exported, "complete")
+
     return csv_path
 
 

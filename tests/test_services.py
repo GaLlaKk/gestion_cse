@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import requests
+
 from services import active_directory_export
 from services.csv_files import (
     latest_input_file,
@@ -400,6 +402,136 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     (1, 500, "collecting"),
                     (1, 1, "complete"),
                 ],
+            )
+
+    def test_export_resumes_after_connection_error(self):
+        """Vérifie la reprise automatique après une coupure réseau pendant la collecte."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path = root / "config.json"
+            config_path.write_text(
+                (
+                    '{"start_user_email":"start@example.com",'
+                    '"client_id":"client-id","authority":"authority",'
+                    '"report_domain":"example.com","scopes":["scope"]}'
+                ),
+                encoding="utf-8",
+            )
+            output_directory = root / "out"
+            output_directory.mkdir()
+            final_path = (
+                output_directory / "20261028_liste_salarie_active_directory.csv"
+            )
+            resume_state_path = (
+                output_directory / active_directory_export.RESUME_STATE_FILENAME
+            )
+
+            flow = {"user_code": "ABCD1234", "message": "Sign in"}
+            client = Mock()
+            client.initiate_device_flow.return_value = flow
+            client.acquire_token_by_device_flow.return_value = {
+                "access_token": "token"
+            }
+            logger = Mock()
+
+            def graph_response(status_code=200, payload=None):
+                """Construit une réponse Graph simulée pour le scénario."""
+                response = Mock(status_code=status_code)
+                response.json.return_value = payload
+                response.raise_for_status.return_value = None
+                return response
+
+            phase = {"value": "fail"}
+
+            def request_graph(url, **_kwargs):
+                """Simule une coupure réseau puis un succès au redémarrage."""
+                if "/users/start@example.com?" in url:
+                    return graph_response(
+                        payload={
+                            "id": "root-id",
+                            "displayName": "Start User",
+                            "mail": "start@example.com",
+                            "userPrincipalName": "start@example.com",
+                            "jobTitle": "Analyste",
+                            "officeLocation": "Paris",
+                            "department": "Services",
+                        }
+                    )
+                if "/users/root-id/manager" in url:
+                    return graph_response(status_code=404)
+                if "/users/root-id/directReports" in url:
+                    return graph_response(
+                        payload={
+                            "value": [
+                                {
+                                    "id": "child-id",
+                                    "mail": "child@example.com",
+                                    "displayName": "Child User",
+                                }
+                            ]
+                        }
+                    )
+                if "/users/child-id?" in url:
+                    if phase["value"] == "fail":
+                        raise requests.ConnectionError(
+                            "Remote end closed connection without response"
+                        )
+                    return graph_response(
+                        payload={
+                            "id": "child-id",
+                            "displayName": "Child User",
+                            "mail": "child@example.com",
+                            "userPrincipalName": "child@example.com",
+                            "jobTitle": "Consultant",
+                            "officeLocation": "Lille",
+                            "department": "Data",
+                        }
+                    )
+                if "/users/child-id/manager" in url:
+                    return graph_response(status_code=404)
+                if "/users/child-id/directReports" in url:
+                    return graph_response(payload={"value": []})
+                self.fail(f"URL Graph inattendue : {url}")
+
+            with (
+                patch.object(
+                    active_directory_export,
+                    "get_config_path",
+                    return_value=config_path,
+                ),
+                patch.object(
+                    active_directory_export,
+                    "initialize_output",
+                    return_value=(logger, output_directory, "20261028"),
+                ),
+                patch.object(
+                    active_directory_export,
+                    "PublicClientApplication",
+                    return_value=client,
+                ),
+                patch.object(
+                    active_directory_export.requests,
+                    "get",
+                    side_effect=request_graph,
+                ),
+            ):
+                with self.assertRaises(requests.ConnectionError):
+                    active_directory_export.run_active_directory_export()
+
+                self.assertTrue(resume_state_path.is_file())
+                self.assertEqual(len(list(output_directory.glob("*.tmp"))), 1)
+
+                phase["value"] = "success"
+                result_path = active_directory_export.run_active_directory_export()
+
+            self.assertEqual(result_path, final_path)
+            self.assertFalse(resume_state_path.exists())
+            self.assertEqual(len(list(output_directory.glob("*.tmp"))), 0)
+            with final_path.open(encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual(
+                [row["Email"] for row in rows],
+                ["start@example.com", "child@example.com"],
             )
 
     def test_export_appends_visible_users_from_previous_export(self):
