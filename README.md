@@ -1,218 +1,187 @@
-# scripts_cse - Guide utilisateur
+# Gestion des fichiers CSE
 
-Ce projet aide a preparer des fichiers CSE a partir de deux sources:
+Cette application graphique aide à préparer les fichiers CSE à partir des
+listes Swile et Active Directory. Elle permet de générer un export des salariés,
+de comparer les listes et de préparer les fichiers à importer dans Swile.
 
-- export Swile
-- export Active Directory (Microsoft Graph)
+## Démarrage rapide
 
-## 0) Utilisation recommandee: runner genere par le deploiement
+### 1. Télécharger et lancer l’application
 
-Le mode le plus simple pour les utilisateurs finaux est d'utiliser
-l'executable (runner) genere par le pipeline CI de deploiement.
+Téléchargez l’archive correspondant à votre système depuis les
+[versions publiées](https://github.com/GaLlaKk/scripts_cse/releases), puis
+décompressez-la dans un dossier accessible.
 
-Artefacts generes selon la plateforme:
+Les archives disponibles sont destinées à Windows, macOS (Intel) et Linux.
+L’application s’utilise avec une interface graphique; aucune installation de
+Python n’est nécessaire avec ces archives.
 
-- GestionCSE-windows-x64
-- GestionCSE-macos
-- GestionCSE-linux
+### 2. Configurer l’accès à Active Directory
 
-Chaque artefact contient:
+Dans l’onglet **liste_salarie_active_directory**, dépliez la section de
+configuration si nécessaire, renseignez les paramètres fournis par votre
+organisation, puis cliquez sur **Enregistrer la configuration**. Le fichier
+`liste_salarie_active_directory.config.json` est enregistré à côté de
+l’application. Il est nécessaire pour récupérer la liste des salariés depuis
+Microsoft.
 
-- le binaire de l'application
-- un fichier LIRE_AVANT_LANCEMENT.txt
+Les paramètres à demander à votre administrateur sont l’adresse de départ,
+l’identifiant de l’application, l’autorité Microsoft, le domaine de rapport
+et les autorisations (scopes). Ne partagez pas le fichier de configuration en
+dehors de votre organisation.
 
-Important:
+Au premier accès, une connexion Microsoft peut être demandée. Suivez les
+indications affichées dans la fenêtre et saisissez le code de vérification.
 
-- placez le fichier liste_salarie_active_directory.config.json a cote du binaire
-- le modele CSV Swile est deja embarque dans le runner
+### 3. Générer et comparer les listes
 
-Vous pouvez l'utiliser:
+1. Dans l’onglet **liste_salarie_active_directory**, cliquez sur
+   **Générer la liste Active Directory**. La récupération des photos est
+   facultative.
+2. Dans l’onglet **swile_active_directory**, sélectionnez le fichier Swile et
+   le fichier Active Directory avec **Parcourir…**, ou déposez-les dans les
+   zones prévues. Le bouton **Copier le dernier export** permet de reprendre
+   l’export Active Directory qui vient d’être généré.
+3. Cliquez sur **Comparer les listes et préparer les ajouts Swile**.
+4. Consultez le détail du traitement dans le panneau de suivi et ouvrez le
+   dossier de résultats avec le bouton situé à côté de l’action.
 
-- via une interface graphique (recommande)
-- via des commandes en ligne de commande (avance)
+Le fichier Swile utilise le séparateur `;`. L’export Active Directory utilise
+le séparateur `,`.
 
-## 1) Prerequis
+### Générer les valeurs de lieu de travail
 
-- Windows, macOS ou Linux
-- Python 3.10 ou plus recent
-- Acces Microsoft pour generer l'export Active Directory
+Dans l’onglet **swile_active_directory**, ouvrez le sous-onglet **Valeurs de
+lieu de travail**, puis cliquez sur le bouton de génération. Cette opération
+utilise les fichiers Swile et Active Directory sélectionnés dans le sous-onglet
+**Comparer les listes**.
 
-Notes:
+Le mapping est défini dans `configuration_lieux_travail.json`, à côté de
+l’application. Les règles fournies par défaut associent Courcelles à
+`Paris 145`, Wasquehal et l’avenue de la Marne à `Lille 5.9`, et Paris 133 à
+`Paris 133`. Si aucune règle ne correspond, la valeur `Autre` est produite.
+Vous pouvez modifier ce fichier pour adapter les associations à votre
+organisation. Les règles sont évaluées dans l’ordre; tous les termes d’un
+motif doivent être présents. Si le fichier est absent, les règles par défaut
+restent disponibles.
 
-- Windows est la plateforme la plus simple a utiliser dans ce depot (scripts PowerShell prets a l'emploi).
-- macOS et Linux sont supportes via Python directement.
+## Fichiers et résultats
 
-## 2) Installation locale (optionnelle)
+Les fichiers peuvent être sélectionnés dans l’interface ou déposés dans les
+zones prévues. Les dossiers utilisés par l’application sont :
 
-Cette section est utile uniquement si vous n'utilisez pas le runner genere par
-le deploiement.
+- Entrées et résultats Swile : `swile_active_directory/in` et
+  `swile_active_directory/out`
+- Export Active Directory : `liste_salarie_active_directory/out`
+- Journaux de traitement : `log`
 
-Depuis la racine du projet:
+Les résultats peuvent inclure les listes d’utilisateurs trouvés et non trouvés,
+les fichiers d’ajouts et d’ajouts ignorés, ainsi que le fichier des valeurs de
+lieu de travail.
 
-### Windows
+### Colonnes attendues
+
+Le fichier Swile doit contenir au minimum les colonnes `Prénom`, `Nom`,
+`Email` et `Matricule`.
+
+Le fichier Active Directory doit contenir au minimum les colonnes `Nom`,
+`Email`, `Identifiant` et `Poste` pour la comparaison et la préparation des
+ajouts. La colonne `Lieu de travail` est utilisée pour générer les valeurs de
+lieu; si elle est absente, la valeur par défaut est appliquée.
+
+## Dépannage
+
+- **La connexion Microsoft échoue** : vérifiez les paramètres Active Directory
+  avec votre administrateur, puis réessayez.
+- **Un message indique qu’une colonne manque** : vérifiez les en-têtes attendus
+  ci-dessus ainsi que le séparateur du fichier.
+- **Aucun résultat n’est produit** : vérifiez que les bons fichiers Swile et
+  Active Directory ont été sélectionnés et qu’ils contiennent des données.
+- **Le mapping des lieux ne s’applique pas comme prévu** : vérifiez
+  `configuration_lieux_travail.json`. Les termes sont recherchés sans tenir
+  compte des majuscules ni des accents, et les règles les plus haut placées
+  sont prioritaires.
+
+## Avancé
+
+Cette partie est destinée aux personnes qui souhaitent lancer le projet depuis
+les sources, utiliser les commandes en ligne de commande ou exécuter les tests.
+Pour l’utilisation habituelle, privilégiez l’application graphique téléchargée
+ci-dessus.
+
+### Installation et lancement depuis les sources
+
+Python 3.12 est utilisé pour les tests et la compilation automatisée. Depuis la
+racine du dépôt, créez un environnement virtuel et installez les dépendances.
+
+Windows, avec PowerShell :
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\run_cse_desktop_app.ps1
 ```
 
-Alternative (script fourni):
+Le script `.\debug\debug_deploy.ps1` peut également préparer l’environnement
+local sous Windows.
 
-```powershell
-.\debug\debug_deploy.ps1
-```
-
-### macOS / Linux
+macOS et Linux :
 
 ```bash
 python3 -m venv .venv
 ./.venv/bin/python -m pip install -r requirements.txt
-```
-
-## 3) Lancement de l'application (interface graphique)
-
-### Windows
-
-```powershell
-.\run_cse_desktop_app.ps1
-```
-
-Ou:
-
-```powershell
-.\.venv\Scripts\python.exe .\cse_desktop_app.py
-```
-
-### macOS / Linux
-
-```bash
 ./.venv/bin/python ./cse_desktop_app.py
 ```
 
-## 4) Utilisation conseillee (pas a pas)
+### Commandes en ligne de commande
 
-1. Ouvrez l'onglet `liste_salarie_active_directory`.
-2. Cliquez sur `Generer la liste Active Directory`.
-3. Suivez la connexion Microsoft (code de verification) si demandee.
-4. Deposez les CSV requis dans l'onglet `swile_active_directory`:
-   - fichier Swile (separateur `;`)
-   - fichier Active Directory (separateur `,`)
-5. Cliquez sur `Comparer les listes et preparer les ajouts Swile`.
-6. Recuperez les resultats dans le dossier de sortie.
+Les commandes ci-dessous s’exécutent depuis la racine du dépôt et utilisent
+l’environnement virtuel créé précédemment.
 
-## 5) Emplacements des fichiers
-
-- Entree Swile: `swile_active_directory/in`
-- Sortie Swile: `swile_active_directory/out`
-- Sortie export Active Directory: `liste_salarie_active_directory/out`
-- Journal d'execution: `log`
-
-## 6) Formats CSV attendus
-
-### Fichier Swile (separateur `;`)
-
-Colonnes minimales:
-
-- `Prenom`
-- `Nom`
-- `Email`
-- `Matricule`
-
-### Fichier Active Directory (separateur `,`)
-
-Colonnes minimales pour comparaison/ajouts:
-
-- `Nom`
-- `Email`
-- `Identifiant`
-- `Poste`
-
-Pour la generation des valeurs de lieu de travail, la colonne `Lieu de travail`
-est utilisee quand elle est disponible.
-
-## 7) Fichiers generes
-
-Selon l'action, vous obtiendrez notamment:
-
-- `*-trouves.csv`
-- `*-non-trouves.csv`
-- `collaborators-additions-YYYYMMDDtHHMMSS.csv`
-- `collaborators-ignored-additions-...csv`
-- `collaborators-attribute-values-YYYYMMDDtHHMMSS.csv`
-
-## 8) Utilisation en ligne de commande (avance)
-
-### Generer l'export Active Directory
-
-Windows:
+Générer l’export Active Directory :
 
 ```powershell
 .\.venv\Scripts\python.exe .\liste_salarie_active_directory.py
 ```
 
-macOS / Linux:
+Sur macOS ou Linux :
 
 ```bash
 ./.venv/bin/python ./liste_salarie_active_directory.py
 ```
 
-### Traitements Swile
-
-Windows:
+Lancer les traitements Swile (comparaison et préparation des ajouts) :
 
 ```powershell
 .\.venv\Scripts\python.exe .\swile_active_directory.py all
 ```
 
-macOS / Linux:
+Sur macOS ou Linux :
 
 ```bash
 ./.venv/bin/python ./swile_active_directory.py all
 ```
 
-Actions disponibles:
-
-- `compare`
-- `additions`
-- `all`
-- `location_values`
-
-Exemple avec fichiers explicites:
+Actions Swile disponibles : `compare`, `additions`, `all` et `location_values`.
+Les fichiers d’entrée sont recherchés dans `swile_active_directory/in` par
+défaut. Pour sélectionner explicitement des fichiers :
 
 ```powershell
-.\.venv\Scripts\python.exe .\swile_active_directory.py compare \
-  --swile-file .\swile_active_directory\in\collaborators.csv \
-  --active-directory-file .\swile_active_directory\in\20261103_liste_salarie_active_directory.csv
+.\.venv\Scripts\python.exe .\swile_active_directory.py compare `
+  --swile-file .\swile_active_directory\in\collaborators.csv `
+  --active-directory-file .\swile_active_directory\in\export_ad.csv
 ```
 
-Equivalent macOS / Linux:
+Sur macOS ou Linux :
 
 ```bash
 ./.venv/bin/python ./swile_active_directory.py compare \
   --swile-file ./swile_active_directory/in/collaborators.csv \
-  --active-directory-file ./swile_active_directory/in/20261103_liste_salarie_active_directory.csv
+  --active-directory-file ./swile_active_directory/in/export_ad.csv
 ```
 
-## 9) Configuration Active Directory
+### Tests
 
-Le fichier `liste_salarie_active_directory.config.json` doit etre renseigne.
-Champs obligatoires:
-
-- `start_user_email`
-- `client_id`
-- `authority`
-- `scopes`
-- `report_domain`
-
-Important: ne partagez pas ce fichier en dehors de votre organisation.
-
-## 10) Depannage rapide
-
-- Message `Environnement Python introuvable`:
-  - executez `.\debug\debug_deploy.ps1`
-- Erreur de colonnes CSV:
-  - verifiez les noms de colonnes attendus et le bon separateur
-- Aucun resultat:
-  - verifiez que les fichiers ont bien ete deposes dans les dossiers `in`
-- Probleme de connexion Microsoft:
-  - relancez et verifiez la configuration `liste_salarie_active_directory.config.json`
+```powershell
+python -m unittest discover -s tests -v
+```
