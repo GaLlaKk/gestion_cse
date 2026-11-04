@@ -1,5 +1,7 @@
 import csv
+import copy
 import json
+import tempfile
 from datetime import date, datetime
 from pathlib import Path
 
@@ -14,7 +16,7 @@ from services.csv_files import DEFAULT_TEMPLATE_FILE, read_csv
 from services.paths import bundled_resource, project_root
 
 WORK_LOCATION_CONFIG_PATH = (
-    project_root() / "configuration_lieux_travail.json"
+    project_root() / "lieux_travail.config.json"
 )
 DEFAULT_WORK_LOCATION_MAPPING = {
     "default_value": "Autre",
@@ -242,7 +244,8 @@ def load_work_location_mapping(config_path=None):
     """Charge et valide le mapping des lieux, avec repli si le fichier manque."""
     config_path = Path(config_path or WORK_LOCATION_CONFIG_PATH)
     if not config_path.exists():
-        return DEFAULT_WORK_LOCATION_MAPPING
+        mapping = copy.deepcopy(DEFAULT_WORK_LOCATION_MAPPING)
+        return _validate_work_location_mapping(mapping, config_path)
 
     try:
         with config_path.open(encoding="utf-8") as config_file:
@@ -252,6 +255,11 @@ def load_work_location_mapping(config_path=None):
             f"Configuration des lieux invalide ({config_path}) : {error}"
         ) from error
 
+    return _validate_work_location_mapping(mapping, config_path)
+
+
+def _validate_work_location_mapping(mapping, config_path):
+    """Valide la structure et le contenu du mapping des lieux."""
     if not isinstance(mapping, dict):
         raise ValueError(
             f"La configuration des lieux doit être un objet JSON : {config_path}"
@@ -296,6 +304,32 @@ def load_work_location_mapping(config_path=None):
                     f"de termes non vides : {config_path}"
                 )
     return mapping
+
+
+def save_work_location_mapping(mapping, config_path=None):
+    """Valide et enregistre atomiquement le mapping des lieux."""
+    config_path = Path(config_path or WORK_LOCATION_CONFIG_PATH)
+    _validate_work_location_mapping(mapping, config_path)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=config_path.parent,
+            prefix=f".{config_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            json.dump(mapping, temporary_file, indent=2, ensure_ascii=False)
+            temporary_file.write("\n")
+        temporary_path.replace(config_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    return config_path
 
 
 def map_work_location_value(work_location, mapping=None):

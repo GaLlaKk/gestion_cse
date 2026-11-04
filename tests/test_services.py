@@ -14,6 +14,7 @@ from services.swile_service import (
     generate_work_location_values,
     load_work_location_mapping,
     map_work_location_value,
+    save_work_location_mapping,
 )
 
 
@@ -762,7 +763,7 @@ class SwileServiceTests(unittest.TestCase):
 
     def test_work_location_mapping_loads_custom_rules(self):
         """Vérifie le chargement des règles personnalisées et leur normalisation."""
-        config_path = self.root / "configuration_lieux_travail.json"
+        config_path = self.root / "lieux_travail.config.json"
         config_path.write_text(
             json.dumps(
                 {
@@ -803,7 +804,7 @@ class SwileServiceTests(unittest.TestCase):
             ],
             ",",
         )
-        config_path = self.root / "configuration_lieux_travail.json"
+        config_path = self.root / "lieux_travail.config.json"
         config_path.write_text(
             json.dumps(
                 {
@@ -837,11 +838,47 @@ class SwileServiceTests(unittest.TestCase):
 
     def test_work_location_mapping_rejects_invalid_configuration(self):
         """Vérifie qu’une configuration présente mais invalide est signalée."""
-        config_path = self.root / "configuration_lieux_travail.json"
+        config_path = self.root / "lieux_travail.config.json"
         config_path.write_text('{"default_value": "Autre", "rules": [{}]}')
 
         with self.assertRaisesRegex(ValueError, "règle 1"):
             load_work_location_mapping(config_path)
+
+    def test_work_location_mapping_is_saved_and_reloaded(self):
+        """Vérifie l’enregistrement atomique et le rechargement du mapping."""
+        config_path = self.root / "lieux_travail.config.json"
+        mapping = {
+            "default_value": "Autre site",
+            "rules": [
+                {
+                    "patterns": [["paris", "courcelles"]],
+                    "value": "Paris siège",
+                }
+            ],
+        }
+
+        self.assertEqual(
+            save_work_location_mapping(mapping, config_path),
+            config_path,
+        )
+        self.assertEqual(load_work_location_mapping(config_path), mapping)
+        self.assertEqual(list(self.root.glob("*.tmp")), [])
+
+    def test_invalid_work_location_mapping_does_not_replace_file(self):
+        """Vérifie qu’un mapping invalide ne modifie pas le fichier enregistré."""
+        config_path = self.root / "lieux_travail.config.json"
+        config_path.write_text('{"default_value": "Avant"}', encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "rules"):
+            save_work_location_mapping(
+                {"default_value": "Après", "rules": "invalide"},
+                config_path,
+            )
+
+        self.assertEqual(
+            config_path.read_text(encoding="utf-8"),
+            '{"default_value": "Avant"}',
+        )
 
     def test_compare_users_writes_found_and_missing_csvs(self):
         """Vérifie l’écriture des résultats de comparaison dans deux CSV."""

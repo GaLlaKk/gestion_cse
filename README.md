@@ -56,14 +56,17 @@ lieu de travail**, puis cliquez sur le bouton de génération. Cette opération
 utilise les fichiers Swile et Active Directory sélectionnés dans le sous-onglet
 **Comparer les listes**.
 
-Le mapping est défini dans `configuration_lieux_travail.json`, à côté de
-l’application. Les règles fournies par défaut associent Courcelles à
-`Paris 145`, Wasquehal et l’avenue de la Marne à `Lille 5.9`, et Paris 133 à
-`Paris 133`. Si aucune règle ne correspond, la valeur `Autre` est produite.
-Vous pouvez modifier ce fichier pour adapter les associations à votre
-organisation. Les règles sont évaluées dans l’ordre; tous les termes d’un
-motif doivent être présents. Si le fichier est absent, les règles par défaut
-restent disponibles.
+Le mapping peut être modifié dans la section **Configurer le mapping des
+lieux** de ce sous-onglet : ajoutez, supprimez ou réordonnez les règles, puis
+enregistrez avant de générer le fichier. Les mots-clés séparés par des
+points-virgules doivent tous correspondre au lieu Active Directory. Le mapping
+est également défini dans `lieux_travail.config.json`, à côté de
+l’application, pour une modification directe. Les règles fournies par défaut
+associent Courcelles à `Paris 145`, Wasquehal et l’avenue de la Marne à
+`Lille 5.9`, et Paris 133 à `Paris 133`. Si aucune règle ne correspond, la
+valeur `Autre` est produite.
+Les règles sont évaluées dans l’ordre et la première correspondance est
+utilisée. Si le fichier est absent, les règles par défaut restent disponibles.
 
 ## Fichiers et résultats
 
@@ -97,10 +100,10 @@ lieu; si elle est absente, la valeur par défaut est appliquée.
   ci-dessus ainsi que le séparateur du fichier.
 - **Aucun résultat n’est produit** : vérifiez que les bons fichiers Swile et
   Active Directory ont été sélectionnés et qu’ils contiennent des données.
-- **Le mapping des lieux ne s’applique pas comme prévu** : vérifiez
-  `configuration_lieux_travail.json`. Les termes sont recherchés sans tenir
-  compte des majuscules ni des accents, et les règles les plus haut placées
-  sont prioritaires.
+- **Le mapping des lieux ne s’applique pas comme prévu** : vérifiez les règles
+  dans l’interface ou dans `lieux_travail.config.json`. Les termes sont
+  recherchés sans tenir compte des majuscules ni des accents, et les règles les
+  plus haut placées sont prioritaires.
 
 ## Avancé
 

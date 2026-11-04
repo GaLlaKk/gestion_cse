@@ -72,11 +72,13 @@ fichier/traitement pour le flux Swile.
   - Toutes les lignes du CSV Swile sont conservées dans ce fichier (pas de
     filtre de domaine ni d’exclusion `.ext`).
   - Le mapping de lieu est lu depuis
-    `configuration_lieux_travail.json` à la racine du projet. Les règles sont
+    `lieux_travail.config.json` à la racine du projet. Les règles sont
     évaluées dans l’ordre; les termes d’un motif sont tous requis et les motifs
     d’une règle sont alternatifs. Si le fichier est absent, les valeurs
     intégrées restent Courcelles -> `Paris 145`, Wasquehal / avenue de la
     Marne -> `Lille 5.9`, Paris 133 -> `Paris 133`, sinon `Autre`.
+    L’interface de l’onglet « Valeurs de lieu de travail » permet d’ajouter,
+    supprimer et réordonner les motifs ainsi que d’enregistrer le mapping.
     Les archives d’exécutables incluent ce fichier à la racine, à côté de
     l’application.
 - `domain/normalization.py`

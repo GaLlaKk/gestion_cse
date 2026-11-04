@@ -15,7 +15,12 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 
 from services.csv_files import read_csv
 from services.paths import bundled_resource, project_root
-from services.swile_service import execute_swile_action
+from services.swile_service import (
+    WORK_LOCATION_CONFIG_PATH,
+    execute_swile_action,
+    load_work_location_mapping,
+    save_work_location_mapping,
+)
 from services.active_directory_export import (
     get_config_path,
     run_active_directory_export,
@@ -452,6 +457,8 @@ class CSEFileManager(TkinterDnD.Tk):
             fg="#555555",
         ).pack(fill="x")
 
+        self._create_work_location_mapping_editor(location_values_tab)
+        self._load_work_location_mapping()
         self._load_active_directory_config()
         self._refresh_file_labels()
         self.after(100, self._position_main_pane_sash)
@@ -528,6 +535,291 @@ class CSEFileManager(TkinterDnD.Tk):
             self.active_directory_config_toggle.configure(
                 text="Afficher la configuration Active Directory"
             )
+
+    def _create_work_location_mapping_editor(self, parent):
+        """Construit l’éditeur graphique du mapping des lieux de travail."""
+        section = tk.LabelFrame(
+            parent,
+            text="Configurer le mapping des lieux",
+            padx=10,
+            pady=8,
+        )
+        section.pack(fill="both", expand=True, pady=(8, 0))
+        tk.Label(
+            section,
+            text=(
+                f"Fichier : {WORK_LOCATION_CONFIG_PATH}\n"
+                "Les règles sont évaluées de haut en bas. Séparez les "
+                "mots-clés par des points-virgules; tous doivent apparaître "
+                "dans le lieu Active Directory."
+            ),
+            anchor="w",
+            justify="left",
+            wraplength=760,
+        ).pack(fill="x", pady=(0, 6))
+
+        default_row = tk.Frame(section)
+        default_row.pack(fill="x", pady=(0, 6))
+        tk.Label(default_row, text="Valeur par défaut :", anchor="w").pack(
+            side="left"
+        )
+        self.work_location_default_value = tk.StringVar(value="Autre")
+        self.work_location_default_entry = tk.Entry(
+            default_row,
+            textvariable=self.work_location_default_value,
+            width=28,
+        )
+        self.work_location_default_entry.pack(side="left", padx=(6, 0))
+        self.work_location_default_entry.bind(
+            "<KeyRelease>", self._mark_work_location_mapping_dirty
+        )
+        self.work_location_default_entry.bind(
+            "<<Paste>>", self._mark_work_location_mapping_dirty
+        )
+
+        header = tk.Frame(section)
+        header.pack(fill="x")
+        header.columnconfigure(0, weight=3)
+        header.columnconfigure(1, weight=2)
+        tk.Label(header, text="Mots-clés (séparés par ;)").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
+        tk.Label(header, text="Valeur Swile").grid(
+            row=0, column=1, sticky="w"
+        )
+        self.work_location_rules_frame = tk.Frame(section)
+        self.work_location_rules_frame.columnconfigure(0, weight=1)
+        self.work_location_rules_frame.pack(fill="x")
+        self.work_location_mapping_rows = []
+        self.work_location_mapping_controls = [self.work_location_default_entry]
+        self.work_location_mapping_dirty = False
+
+        actions = tk.Frame(section)
+        actions.pack(fill="x", pady=(6, 0))
+        self.work_location_add_button = tk.Button(
+            actions,
+            text="＋ Ajouter une règle",
+            command=lambda: self._add_work_location_rule(mark_dirty=True),
+        )
+        self.work_location_add_button.pack(side="left")
+        self.work_location_save_button = tk.Button(
+            actions,
+            text="Enregistrer le mapping",
+            command=self._save_work_location_mapping,
+        )
+        self.work_location_save_button.pack(side="left", padx=(6, 0))
+        self.work_location_reload_button = tk.Button(
+            actions,
+            text="Recharger",
+            command=self._load_work_location_mapping,
+        )
+        self.work_location_reload_button.pack(side="left", padx=(6, 0))
+        self.work_location_mapping_status = tk.StringVar(value="")
+        tk.Label(
+            actions,
+            textvariable=self.work_location_mapping_status,
+            anchor="e",
+            fg="#555555",
+        ).pack(side="right", fill="x", expand=True, padx=(8, 0))
+        self.work_location_mapping_controls.extend(
+            (
+                self.work_location_add_button,
+                self.work_location_save_button,
+                self.work_location_reload_button,
+            )
+        )
+
+    def _add_work_location_rule(self, pattern="", value="", mark_dirty=False):
+        """Ajoute une ligne de mots-clés et sa valeur Swile associée."""
+        row_frame = tk.Frame(self.work_location_rules_frame)
+        row_frame.columnconfigure(0, weight=3)
+        row_frame.columnconfigure(1, weight=2)
+        pattern_var = tk.StringVar(value=pattern)
+        value_var = tk.StringVar(value=value)
+        pattern_entry = tk.Entry(row_frame, textvariable=pattern_var)
+        pattern_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        value_entry = tk.Entry(row_frame, textvariable=value_var)
+        value_entry.grid(row=0, column=1, sticky="ew", padx=(0, 6))
+        pattern_entry.bind("<KeyRelease>", self._mark_work_location_mapping_dirty)
+        pattern_entry.bind("<<Paste>>", self._mark_work_location_mapping_dirty)
+        value_entry.bind("<KeyRelease>", self._mark_work_location_mapping_dirty)
+        value_entry.bind("<<Paste>>", self._mark_work_location_mapping_dirty)
+        move_up_button = tk.Button(
+            row_frame,
+            text="↑",
+            width=2,
+            command=lambda selected=row_frame: self._move_work_location_rule(
+                selected, -1
+            ),
+        )
+        move_up_button.grid(row=0, column=2, padx=(0, 2))
+        move_down_button = tk.Button(
+            row_frame,
+            text="↓",
+            width=2,
+            command=lambda selected=row_frame: self._move_work_location_rule(
+                selected, 1
+            ),
+        )
+        move_down_button.grid(row=0, column=3, padx=(0, 2))
+        remove_button = tk.Button(
+            row_frame,
+            text="×",
+            width=2,
+            command=lambda selected=row_frame: self._remove_work_location_rule(
+                selected
+            ),
+        )
+        remove_button.grid(row=0, column=4)
+        row = {
+            "frame": row_frame,
+            "pattern": pattern_var,
+            "value": value_var,
+            "controls": (
+                pattern_entry,
+                value_entry,
+                move_up_button,
+                move_down_button,
+                remove_button,
+            ),
+            "move_up": move_up_button,
+            "move_down": move_down_button,
+        }
+        self.work_location_mapping_rows.append(row)
+        self.work_location_mapping_controls.extend(row["controls"])
+        self._refresh_work_location_rule_rows()
+        if mark_dirty:
+            self.work_location_mapping_dirty = True
+
+    def _refresh_work_location_rule_rows(self):
+        """Actualise l’ordre et l’état des commandes de déplacement."""
+        last_index = len(self.work_location_mapping_rows) - 1
+        for index, row in enumerate(self.work_location_mapping_rows):
+            row["frame"].grid(
+                row=index,
+                column=0,
+                sticky="ew",
+                pady=2,
+            )
+            row["move_up"].configure(state="disabled" if index == 0 else "normal")
+            row["move_down"].configure(
+                state="disabled" if index == last_index else "normal"
+            )
+
+    def _move_work_location_rule(self, row_frame, offset):
+        """Déplace une règle d’un rang et met à jour son ordre de priorité."""
+        current_index = next(
+            index
+            for index, row in enumerate(self.work_location_mapping_rows)
+            if row["frame"] is row_frame
+        )
+        target_index = current_index + offset
+        if not 0 <= target_index < len(self.work_location_mapping_rows):
+            return
+        row = self.work_location_mapping_rows.pop(current_index)
+        self.work_location_mapping_rows.insert(target_index, row)
+        self._refresh_work_location_rule_rows()
+        self.work_location_mapping_dirty = True
+
+    def _remove_work_location_rule(self, row_frame):
+        """Supprime une règle du formulaire."""
+        row_index = next(
+            index
+            for index, row in enumerate(self.work_location_mapping_rows)
+            if row["frame"] is row_frame
+        )
+        row = self.work_location_mapping_rows.pop(row_index)
+        for control in row["controls"]:
+            self.work_location_mapping_controls.remove(control)
+        row_frame.destroy()
+        self._refresh_work_location_rule_rows()
+        self.work_location_mapping_dirty = True
+
+    def _mark_work_location_mapping_dirty(self, event):
+        """Signale une modification non enregistrée du mapping."""
+        if event.widget is not None:
+            self.work_location_mapping_dirty = True
+
+    def _load_work_location_mapping(self):
+        """Charge les règles du fichier ou les règles par défaut."""
+        if self.work_location_mapping_dirty and not messagebox.askyesno(
+            "Recharger le mapping ?",
+            "Les modifications non enregistrées seront perdues. Continuer ?",
+            parent=self,
+        ):
+            return
+        try:
+            mapping = load_work_location_mapping()
+        except (OSError, UnicodeError, ValueError) as error:
+            self.work_location_mapping_status.set("Chargement impossible.")
+            messagebox.showerror(
+                "Configuration du mapping invalide",
+                str(error),
+                parent=self,
+            )
+            return
+
+        for row in self.work_location_mapping_rows:
+            row["frame"].destroy()
+        self.work_location_mapping_rows.clear()
+        self.work_location_mapping_controls = [
+            self.work_location_default_entry,
+            self.work_location_add_button,
+            self.work_location_save_button,
+            self.work_location_reload_button,
+        ]
+        self.work_location_default_value.set(mapping["default_value"])
+        for rule in mapping["rules"]:
+            for pattern in rule["patterns"]:
+                self._add_work_location_rule(
+                    "; ".join(pattern),
+                    rule["value"],
+                )
+        self.work_location_mapping_dirty = False
+        self.work_location_mapping_status.set("Mapping chargé.")
+
+    def _save_work_location_mapping(self):
+        """Valide et enregistre le mapping modifié depuis l’interface."""
+        rules = []
+        for index, row in enumerate(self.work_location_mapping_rows, start=1):
+            terms = [
+                term.strip()
+                for term in row["pattern"].get().split(";")
+            ]
+            value = row["value"].get().strip()
+            if not all(terms) or not value:
+                messagebox.showerror(
+                    "Règle incomplète",
+                    f"La règle {index} doit contenir des mots-clés et une valeur.",
+                    parent=self,
+                )
+                return
+            rules.append(
+                {
+                    "patterns": [terms],
+                    "value": value,
+                }
+            )
+        mapping = {
+            "description": (
+                "Les mots-clés d'une règle sont tous requis. "
+                "Les règles sont évaluées dans l'ordre."
+            ),
+            "default_value": self.work_location_default_value.get().strip(),
+            "rules": rules,
+        }
+        try:
+            save_work_location_mapping(mapping)
+        except (OSError, UnicodeError, ValueError) as error:
+            self.work_location_mapping_status.set("Enregistrement impossible.")
+            messagebox.showerror(
+                "Mapping invalide",
+                str(error),
+                parent=self,
+            )
+            return
+        self.work_location_mapping_dirty = False
+        self.work_location_mapping_status.set("Mapping enregistré.")
 
     def _save_active_directory_config(self):
         """Valide et enregistre les champs de configuration Active Directory."""
@@ -832,6 +1124,16 @@ class CSEFileManager(TkinterDnD.Tk):
         """Vérifie les entrées et démarre le traitement dans un thread."""
         if self.is_running:
             return
+        if action == "location_values" and self.work_location_mapping_dirty:
+            if not messagebox.askyesno(
+                "Mapping non enregistré",
+                "Enregistrer le mapping modifié avant de générer le fichier ?",
+                parent=self,
+            ):
+                return
+            self._save_work_location_mapping()
+            if self.work_location_mapping_dirty:
+                return
         try:
             if action == "active_directory":
                 previous_export_path = self._current_file(
@@ -1114,9 +1416,14 @@ class CSEFileManager(TkinterDnD.Tk):
             button.configure(state=state)
 
     def _set_config_controls_state(self, state):
-        """Active ou désactive les contrôles de configuration Active Directory."""
-        for control in self.active_directory_config_controls:
+        """Active ou désactive les deux formulaires de configuration."""
+        for control in (
+            self.active_directory_config_controls
+            + self.work_location_mapping_controls
+        ):
             control.configure(state=state)
+        if state == "normal":
+            self._refresh_work_location_rule_rows()
 
     def _set_output(self, text):
         """Remplace le contenu du panneau de résultats."""
