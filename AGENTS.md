@@ -181,7 +181,8 @@ fichier/traitement pour le flux Swile.
   Les tests unitaires sont maintenant dans `tests/` (un fichier par module) et
   se lancent avec `python -m unittest discover -s tests -v`. Ils couvrent
   normalisation, rapprochements, règles d’ajout, chemins d’exécution, services
-  CSV, client Graph et écritures atomiques. La CI lance aussi
+  CSV, client Graph, écritures atomiques et interface (`tests/test_ui.py`,
+  ignoré sans affichage Tk; la CI lance les tests sous `xvfb-run -a`). La CI lance aussi
   `python -m ruff check .` (règles `F`, voir `ruff.toml`). Dans les tests de
   l’export AD, patcher `services.graph_client.time.sleep` pour éviter les
   attentes réelles.
