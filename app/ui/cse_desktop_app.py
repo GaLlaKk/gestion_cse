@@ -692,7 +692,7 @@ class CSEFileManager(TkinterDnD.Tk):
         """Construit l’éditeur graphique du mapping des lieux de travail."""
         section = tk.LabelFrame(
             parent,
-            text="Configurer les lieux et filtres Swile",
+            text="Configurer le mapping des lieux",
             padx=10,
             pady=8,
         )
