@@ -140,7 +140,7 @@ jobs:
             dist/swile.config.json
 
       - name: Upload platform package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: GestionCSE-${{ matrix.platform }}
           path: artifacts/*.zip
