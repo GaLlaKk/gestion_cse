@@ -173,8 +173,9 @@ jobs:
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" != "true" ]; then
-              echo "::warning::La release $RELEASE_TAG est déjà publiée (immuable) : publication ignorée."
-              exit 0
+              echo "::error::La release $RELEASE_TAG est déjà publiée (immuable) : impossible d'y ajouter les exécutables."
+              echo "::error::Supprimez-la, puis poussez un nouveau tag (ne créez pas la release à la main)."
+              exit 1
             fi
             gh release upload "$RELEASE_TAG" release-assets/*.zip release-assets/SHA256SUMS.txt --clobber
           else
