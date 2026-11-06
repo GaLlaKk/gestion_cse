@@ -37,13 +37,19 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   défilent verticalement avec une barre d’ascenseur et la molette.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
-- `.github/workflows/release-gestion-cse.yml` exécute les tests unitaires et
-  à chaque push sur une branche. Il construit les exécutables Windows, macOS
-  Intel (runner `macos-15-intel`) et Linux, puis publie les archives ZIP sur
-  une release GitHub uniquement pour les tags `v*`. Une exécution manuelle sur
-  une branche lance donc les tests sans construire d’exécutables ni publier
-  de release. Les artefacts incluent le modèle Swile, mais pas la configuration
+- `.github/workflows/ci.yml` exécute les tests unitaires sur chaque pull
+  request et chaque push sur `main` (réutilisable via `workflow_call`).
+- `.github/workflows/release.yml` se déclenche uniquement sur les tags `v*` :
+  il vérifie que le tag pointe sur un commit de `main`, relance la CI,
+  construit les exécutables Windows, macOS Intel (runner `macos-15-intel`) et
+  Linux, puis publie les archives ZIP et `SHA256SUMS.txt` sur la release
+  GitHub. Les artefacts incluent le modèle Swile, mais pas la configuration
   Active Directory.
+- Flux de travail : branche courte → PR → CI verte → squash merge sur `main` →
+  `git tag vX.Y.Z && git push origin vX.Y.Z`. `main` doit être protégée
+  (PR et check `Run tests` obligatoires) et les tags `v*` protégés via les
+  paramètres du dépôt. Dependabot (`.github/dependabot.yml`) met à jour les
+  actions et dépendances pip.
 - `.github/agents/issue-triage.agent.md` contient les consignes du profil de
   triage : `needs-info` pour les issues à clarifier, `triaged` pour les demandes
   exploitables. Le déclenchement automatique se configure séparément dans
