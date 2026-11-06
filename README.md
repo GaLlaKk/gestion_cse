@@ -10,7 +10,8 @@ de comparer les listes et de préparer les fichiers à importer dans Swile.
 
 Téléchargez l’archive correspondant à votre système depuis les
 [versions publiées](https://github.com/GaLlaKk/scripts_cse/releases), puis
-décompressez-la dans un dossier accessible.
+décompressez-la dans un dossier accessible. Le nom de l’archive et le titre
+de la fenêtre indiquent le numéro de version (par exemple `v1.2.3`).
 
 Les archives disponibles sont destinées à Windows, macOS (Intel) et Linux.
 L’application s’utilise avec une interface graphique; aucune installation de

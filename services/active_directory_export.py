@@ -2,18 +2,22 @@ import csv
 import json
 import logging
 import tempfile
-import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
+from datetime import datetime
 from pathlib import Path
 
 import requests
 from msal import PublicClientApplication
 
 from domain.normalization import active_directory_keys
+from services.active_directory_config import (
+    apply_config_defaults,
+    get_config_path,
+    validate_config,
+)
+from services.atomic_files import atomic_write
 from services.csv_files import read_csv
-from services.paths import project_root
+from services.graph_client import GRAPH_BASE_URL, GraphClient
 
 CSV_HEADERS = (
     "Nom",
@@ -101,7 +105,7 @@ def _download_user_photo(user_id, identifier, photo_directory, request_graph):
         return photo_path
 
     response = request_graph(
-        f"https://graph.microsoft.com/v1.0/users/{user_id}/photo/$value"
+        f"{GRAPH_BASE_URL}/users/{user_id}/photo/$value"
     )
     if response.status_code == 404:
         logger.info(
@@ -114,115 +118,13 @@ def _download_user_photo(user_id, identifier, photo_directory, request_graph):
         raise ValueError(f"La photo de l’utilisateur {user_id} est vide.")
 
     photo_directory.mkdir(parents=True, exist_ok=True)
-    temporary_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            dir=photo_directory,
-            suffix=".tmp",
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            temporary_file.write(response.content)
-        temporary_path.replace(photo_path)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+    atomic_write(
+        photo_path,
+        lambda stream: stream.write(response.content),
+        mode="wb",
+    )
     logger.info("Photo récupérée pour le compte %s.", account_reference)
     return photo_path
-
-
-def get_config_path():
-    """Retourne le chemin du fichier de configuration Active Directory."""
-    return project_root() / "liste_salarie_active_directory.config.json"
-
-
-DEFAULT_CONFIG = {
-    "start_user_email": "prenom.nom@exemple.fr",
-    "client_id": "1fec8e78-bce4-4aaf-ab1b-5451cc387264",
-    "authority": "https://login.microsoftonline.com/organizations",
-    "scopes": ["User.ReadBasic.All"],
-    "report_domain": "exemple.fr",
-}
-EXAMPLE_ONLY_SETTINGS = ("start_user_email", "report_domain")
-
-
-def apply_config_defaults(config):
-    """Complète les paramètres absents ou vides avec les valeurs par défaut."""
-    completed = dict(config)
-    for name, default in DEFAULT_CONFIG.items():
-        value = completed.get(name)
-        if value is None or value == "" or value == []:
-            completed[name] = list(default) if isinstance(default, list) else default
-        elif isinstance(value, str) and not value.strip():
-            completed[name] = default
-    return completed
-
-
-def validate_config(config, config_path):
-    """Vérifie les champs obligatoires de la configuration Active Directory."""
-    if not isinstance(config, dict):
-        raise ValueError(
-            f"La configuration doit être un objet JSON dans {config_path}."
-        )
-    config = apply_config_defaults(config)
-    for setting_name in EXAMPLE_ONLY_SETTINGS:
-        if config[setting_name] == DEFAULT_CONFIG[setting_name]:
-            raise ValueError(
-                f"Le paramètre '{setting_name}' contient une valeur d’exemple "
-                f"à remplacer dans {config_path}."
-            )
-
-    required_string_settings = (
-        "start_user_email",
-        "client_id",
-        "authority",
-        "report_domain",
-    )
-    for setting_name in required_string_settings:
-        if (
-            not isinstance(config.get(setting_name), str)
-            or not config[setting_name].strip()
-        ):
-            raise ValueError(
-                f"Le paramètre '{setting_name}' doit être une chaîne non vide "
-                f"dans {config_path}."
-            )
-
-    scopes = config.get("scopes")
-    if not isinstance(scopes, list) or not scopes or not all(
-        isinstance(scope, str) and scope.strip() for scope in scopes
-    ):
-        raise ValueError(
-            f"Le paramètre 'scopes' doit être une liste de chaînes non vides "
-            f"dans {config_path}."
-        )
-    return scopes
-
-
-def save_active_directory_config(contents, config_path=None):
-    """Valide puis remplace atomiquement le fichier de configuration AD."""
-    config_path = Path(config_path or get_config_path())
-    config = json.loads(contents)
-    validate_config(config, config_path)
-
-    temporary_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=config_path.parent,
-            prefix=f".{config_path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            temporary_file.write(contents)
-        temporary_path.replace(config_path)
-        temporary_path = None
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
-    return config_path
 
 
 def initialize_output(config_path):
@@ -274,23 +176,11 @@ def _csv_row_from_user_entry(user_entry):
 
 def _save_resume_state(resume_state_path, state):
     """Enregistre atomiquement l'etat de reprise de l'export AD."""
-    temporary_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=resume_state_path.parent,
-            prefix=f".{resume_state_path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            json.dump(state, temporary_file)
-        temporary_path.replace(resume_state_path)
-        temporary_path = None
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+    atomic_write(
+        resume_state_path,
+        lambda stream: json.dump(state, stream),
+        encoding="utf-8",
+    )
 
 
 def _load_resume_state(resume_state_path, logger):
@@ -323,6 +213,487 @@ def _load_resume_state(resume_state_path, logger):
         return None
 
 
+MAX_INTERMEDIATE_LEVELS = 2
+MAX_CONCURRENT_REQUESTS = 8
+EXPORT_KEY_TYPES = ("email", "matricule", "name")
+
+
+def _new_key_index():
+    """Crée l’index vide des clés métier des lignes déjà exportées."""
+    return {key_type: set() for key_type in EXPORT_KEY_TYPES}
+
+
+def _add_exported_keys(keys_by_type, row):
+    """Ajoute les clés d’identification d’une ligne déjà exportée."""
+    for key_type, key in active_directory_keys(row).items():
+        if key:
+            keys_by_type[key_type].add(key)
+
+
+def _has_exported_key(keys_by_type, row):
+    """Indique si une ligne est déjà présente selon ses clés métier."""
+    return any(
+        key and key in keys_by_type[key_type]
+        for key_type, key in active_directory_keys(row).items()
+    )
+
+
+def _account_reference(user_entry):
+    """Retourne l’identifiant le plus lisible d’un compte pour les journaux."""
+    identity = user_entry["identity"]
+    return identity["email"] or identity["username"] or user_entry["id"]
+
+
+class ActiveDirectoryAuthenticationError(RuntimeError):
+    """Échec de l’authentification Microsoft."""
+
+
+def _load_config(config_path, logger):
+    """Charge et valide la configuration; retourne la configuration et les scopes."""
+    try:
+        with config_path.open(encoding="utf-8") as config_file:
+            config = json.load(config_file)
+        if isinstance(config, dict):
+            config = apply_config_defaults(config)
+        scopes = validate_config(config, config_path)
+    except Exception:
+        logger.exception(
+            "Impossible de charger ou valider la configuration Active Directory."
+        )
+        raise
+    return config, scopes
+
+
+def _acquire_access_token(config, scopes, logger, on_device_code):
+    """Authentifie l’utilisateur par flux d’appareil et retourne le jeton."""
+    logger.info("Initialisation de l’authentification Microsoft.")
+    try:
+        app = PublicClientApplication(
+            config["client_id"], authority=config["authority"]
+        )
+        flow = app.initiate_device_flow(scopes=scopes)
+        if "user_code" not in flow:
+            raise ActiveDirectoryAuthenticationError(
+                "Impossible d'initier la connexion."
+            )
+
+        if on_device_code is None:
+            print("--- CONNEXION REQUISE ---")
+            print(flow["message"])
+        else:
+            on_device_code(
+                flow.get("verification_uri", "https://login.microsoft.com/device"),
+                flow["user_code"],
+            )
+        result = app.acquire_token_by_device_flow(flow)
+
+        if "access_token" not in result:
+            logger.error("L’authentification Microsoft a échoué.")
+            raise ActiveDirectoryAuthenticationError(
+                f"Erreur d'authentification : {result.get('error_description')}"
+            )
+    except Exception:
+        logger.exception("Échec de l’authentification Microsoft.")
+        raise
+    logger.info("Authentification Microsoft réussie.")
+    return result["access_token"]
+
+
+class _ExportState:
+    """État mutable de la collecte, sérialisable pour une reprise."""
+
+    def __init__(self, start_user_email):
+        self.pending = [(start_user_email, True, 0)]
+        self.processed_ids = set()
+        self.exported_count = 0
+        self.keys_by_type = _new_key_index()
+        self.temporary_path = None
+
+    def to_resume_dict(self):
+        """Représente l’état dans le format JSON de reprise."""
+        return {
+            "temporary_csv_path": str(self.temporary_path),
+            "pending": [
+                {
+                    "user_id_or_email": user_id_or_email,
+                    "is_root": is_root,
+                    "intermediate_levels": intermediate_levels,
+                }
+                for user_id_or_email, is_root, intermediate_levels in self.pending
+            ],
+            "processed_ids": sorted(self.processed_ids),
+            "exported_count": self.exported_count,
+        }
+
+
+class ActiveDirectoryCollector:
+    """Parcourt la hiérarchie Graph et écrit les comptes retenus."""
+
+    def __init__(
+        self,
+        config,
+        graph,
+        logger,
+        output_dir,
+        download_photos=False,
+        on_progress=None,
+        estimated_people=DEFAULT_ESTIMATED_PEOPLE,
+    ):
+        self.start_user_email = config["start_user_email"]
+        self.report_domain = config["report_domain"].lstrip("@").casefold()
+        self.graph = graph
+        self.logger = logger
+        self.output_dir = output_dir
+        self.download_photos = download_photos
+        self.on_progress = on_progress
+        self.estimated_people = estimated_people
+
+    def is_report_domain_email(self, email):
+        """Indique si l’adresse appartient au domaine de rapport."""
+        return email is not None and email.casefold().endswith(
+            f"@{self.report_domain}"
+        )
+
+    def is_external_email(self, email):
+        """Reconnaît l’adresse externe exclue du domaine de rapport."""
+        return email is not None and email.casefold().endswith(
+            f".ext@{self.report_domain}"
+        )
+
+    def report_progress(self, completed_count):
+        """Réévalue la cible de progression et notifie l’interface."""
+        if self.on_progress is None:
+            return
+        self.estimated_people = next_progress_estimate(
+            self.estimated_people, completed_count
+        )
+        self.on_progress(completed_count, self.estimated_people, "collecting")
+
+    def _fetch_manager_email(self, user_id):
+        """Retourne l’e-mail du responsable, ou None s’il n’existe pas."""
+        response = self.graph.get(
+            f"{GRAPH_BASE_URL}/users/{user_id}/manager?$select=mail"
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json().get("mail")
+
+    def _fetch_direct_reports(self, user_id):
+        """Retourne tous les rapports directs d’un compte (pagination incluse)."""
+        url = (
+            f"{GRAPH_BASE_URL}/users/{user_id}/directReports"
+            "?$select=id,mail,displayName"
+        )
+        reports = []
+        while url:
+            response = self.graph.get(url)
+            response.raise_for_status()
+            page = response.json()
+            reports.extend(page.get("value", []))
+            url = page.get("@odata.nextLink")
+        return reports
+
+    def fetch_user_record(self, user_id_or_email):
+        """Récupère un compte, son responsable et ses rapports directs."""
+        user_response = self.graph.get(
+            f"{GRAPH_BASE_URL}/users/{user_id_or_email}"
+            "?$select=id,displayName,mail,userPrincipalName,"
+            "jobTitle,department,officeLocation"
+        )
+        if user_response.status_code == 404:
+            return None
+        user_response.raise_for_status()
+        user_info = user_response.json()
+        user_id = user_info["id"]
+        email = user_info.get("mail")
+        is_epsilon_user = self.is_report_domain_email(email)
+
+        manager_email = None
+        if is_epsilon_user or user_id_or_email == self.start_user_email:
+            manager_email = self._fetch_manager_email(user_id)
+        direct_reports_data = self._fetch_direct_reports(user_id)
+
+        user_principal_name = user_info.get("userPrincipalName")
+        user_entry = {
+            "id": user_id,
+            "identity": {
+                "name": user_info.get("displayName"),
+                "email": email,
+                "username": (
+                    user_principal_name.split("@", 1)[0]
+                    if user_principal_name
+                    else None
+                ),
+            },
+            "professional_info": {
+                "job_title": user_info.get("jobTitle"),
+                "business_unit": user_info.get("department"),
+                "work_location": user_info.get("officeLocation"),
+            },
+            "hierarchy": {
+                "manager_email": (
+                    None
+                    if self.is_external_email(manager_email)
+                    else manager_email
+                ),
+                "direct_reports": [
+                    report["mail"]
+                    for report in direct_reports_data
+                    if report.get("mail")
+                    and not self.is_external_email(report["mail"])
+                ],
+            },
+        }
+        return user_entry, direct_reports_data, is_epsilon_user
+
+    def _export_user(self, writer, user_entry, keys_by_type):
+        """Récupère la photo si demandée, puis écrit la ligne du compte."""
+        if self.download_photos:
+            try:
+                _download_user_photo(
+                    user_entry["id"],
+                    user_entry["identity"]["username"],
+                    self.output_dir / "photos",
+                    self.graph.get,
+                )
+            except requests.HTTPError:
+                self.logger.exception(
+                    "Impossible de récupérer la photo du compte %s.",
+                    _account_reference(user_entry),
+                )
+        row = _csv_row_from_user_entry(user_entry)
+        writer.writerow([row[column] for column in CSV_HEADERS])
+        _add_exported_keys(keys_by_type, row)
+
+    def _next_intermediate_levels(self, mail, intermediate_levels):
+        """Retourne le niveau intermédiaire suivant, ou None si la branche s’arrête."""
+        if self.is_report_domain_email(mail):
+            return 0
+        if intermediate_levels < MAX_INTERMEDIATE_LEVELS:
+            return intermediate_levels + 1
+        return None
+
+    def _process_account(
+        self, writer, state, result, is_root, intermediate_levels, next_pending
+    ):
+        """Traite un compte collecté : écriture éventuelle et rapports à suivre."""
+        user_entry, direct_reports_data, is_epsilon_user = result
+        user_id = user_entry["id"]
+        if user_id in state.processed_ids:
+            return
+        state.processed_ids.add(user_id)
+
+        self.logger.info(
+            "Compte Active Directory examiné : %s.",
+            _account_reference(user_entry),
+        )
+        if (
+            is_root or is_epsilon_user
+        ) and not self.is_external_email(user_entry["identity"]["email"]):
+            self._export_user(writer, user_entry, state.keys_by_type)
+            state.exported_count += 1
+            self.report_progress(state.exported_count)
+
+        for report in direct_reports_data:
+            mail = report.get("mail")
+            if not mail:
+                continue
+            next_levels = self._next_intermediate_levels(
+                mail, intermediate_levels
+            )
+            if next_levels is None:
+                continue
+            report_id = report["id"]
+            previous = next_pending.get(report_id)
+            if report_id not in state.processed_ids and (
+                previous is None or next_levels < previous
+            ):
+                next_pending[report_id] = next_levels
+
+    def collect_hierarchy(self, writer, state, resume_state_path):
+        """Parcourt la hiérarchie par niveaux et sauvegarde l’état de reprise."""
+        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS) as executor:
+            while state.pending:
+                batch = state.pending
+                results = executor.map(
+                    self.fetch_user_record,
+                    (item[0] for item in batch),
+                )
+                next_pending = {}
+
+                for (user_id_or_email, is_root, intermediate_levels), result in zip(
+                    batch, results
+                ):
+                    if result is None:
+                        self.logger.warning(
+                            "Compte %s introuvable dans Microsoft Graph.",
+                            user_id_or_email,
+                        )
+                        continue
+                    self._process_account(
+                        writer,
+                        state,
+                        result,
+                        is_root,
+                        intermediate_levels,
+                        next_pending,
+                    )
+
+                state.pending = [
+                    (report_id, False, levels)
+                    for report_id, levels in next_pending.items()
+                ]
+                _save_resume_state(resume_state_path, state.to_resume_dict())
+
+        self.logger.info(
+            "Collecte terminée : %s comptes examinés, %s personnes retenues.",
+            len(state.processed_ids),
+            state.exported_count,
+        )
+
+    def _missing_previous_rows(self, previous_export_path, keys_by_type):
+        """Retourne les lignes de l’export précédent absentes de l’export courant."""
+        if not previous_export_path.is_file():
+            raise FileNotFoundError(
+                "Le fichier d’export précédent est introuvable : "
+                f"{previous_export_path}"
+            )
+        self.logger.info(
+            "Comparaison avec l’export précédent : %s.",
+            previous_export_path,
+        )
+        _, previous_rows = read_csv(
+            previous_export_path,
+            ",",
+            {"Nom", "Email", "Identifiant", "Poste"},
+        )
+        missing_rows = [
+            row
+            for row in previous_rows
+            if not _has_exported_key(keys_by_type, row)
+        ]
+        self.logger.info(
+            "Comparaison export précédent : %s ligne(s), %s absente(s) du "
+            "fichier courant.",
+            len(previous_rows),
+            len(missing_rows),
+        )
+        return missing_rows
+
+    def append_previous_users(self, writer, state, previous_export_path):
+        """Ajoute les comptes encore visibles absents de l’export précédent."""
+        if previous_export_path is None:
+            self.logger.info("Aucun fichier d’export précédent fourni.")
+            return 0
+
+        appended_count = 0
+        visible_count = 0
+        checked_users = set()
+        for previous_row in self._missing_previous_rows(
+            previous_export_path, state.keys_by_type
+        ):
+            candidate = (previous_row.get("Email") or "").strip()
+            if not candidate:
+                candidate = (previous_row.get("Identifiant") or "").strip()
+            if not candidate:
+                continue
+            candidate_key = candidate.casefold()
+            if candidate_key in checked_users:
+                continue
+            checked_users.add(candidate_key)
+
+            result = self.fetch_user_record(candidate)
+            if result is None:
+                continue
+            user_entry, _direct_reports_data, is_epsilon_user = result
+            email = user_entry["identity"]["email"]
+            is_start_user = (email or "").casefold() == (
+                self.start_user_email.casefold()
+            )
+            if not (
+                is_epsilon_user or is_start_user
+            ) or self.is_external_email(email):
+                continue
+
+            visible_count += 1
+            row = _csv_row_from_user_entry(user_entry)
+            if _has_exported_key(state.keys_by_type, row):
+                continue
+            self._export_user(writer, user_entry, state.keys_by_type)
+            appended_count += 1
+            self.report_progress(state.exported_count + appended_count)
+
+        self.logger.info(
+            "Comparaison export précédent : %s compte(s) encore visible(s), "
+            "%s ajouté(s).",
+            visible_count,
+            appended_count,
+        )
+        return appended_count
+
+
+def _restore_resume_state(resume_state_path, state, logger):
+    """Recharge un export interrompu dans `state`; retourne True si la reprise a eu lieu."""
+    resume_state = _load_resume_state(resume_state_path, logger)
+    if resume_state is None:
+        return False
+    candidate_path = Path(resume_state["temporary_csv_path"])
+    try:
+        _, resumed_rows = read_csv(
+            candidate_path,
+            ",",
+            PROGRESS_EXPORT_COLUMNS,
+        )
+        pending = [
+            (
+                item["user_id_or_email"],
+                item["is_root"],
+                item["intermediate_levels"],
+            )
+            for item in resume_state["pending"]
+        ]
+        processed_ids = set(resume_state["processed_ids"])
+    except (KeyError, TypeError, ValueError, OSError, UnicodeError) as error:
+        logger.warning(
+            "Reprise impossible avec l'etat enregistre (%s) : %s. "
+            "Un nouvel export complet sera lance.",
+            candidate_path,
+            error,
+        )
+        resume_state_path.unlink(missing_ok=True)
+        return False
+
+    state.pending = pending
+    state.processed_ids = processed_ids
+    for resumed_row in resumed_rows:
+        _add_exported_keys(state.keys_by_type, resumed_row)
+    state.exported_count = len(resumed_rows)
+    state.temporary_path = candidate_path
+    logger.info(
+        "Reprise d'un export interrompu : %s ligne(s) deja ecrite(s), "
+        "%s compte(s) en attente.",
+        state.exported_count,
+        len(pending),
+    )
+    return True
+
+
+def _create_temporary_export(output_dir, csv_filename):
+    """Crée le CSV temporaire de l’export avec son en-tête."""
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        newline="",
+        encoding="utf-8",
+        dir=output_dir,
+        prefix=f".{csv_filename}.",
+        suffix=".tmp",
+        delete=False,
+    ) as temporary_file:
+        csv.writer(temporary_file).writerow(list(CSV_HEADERS))
+        return Path(temporary_file.name)
+
+
 def run_active_directory_export(
     on_device_code=None,
     download_photos=False,
@@ -337,430 +708,18 @@ def run_active_directory_export(
     estimated_people = estimate_previous_export_count(output_dir)
     if on_progress is not None:
         on_progress(0, estimated_people, "connecting")
-    try:
-        with config_path.open(encoding="utf-8") as config_file:
-            config = json.load(config_file)
-        if isinstance(config, dict):
-            config = apply_config_defaults(config)
-        scopes = validate_config(config, config_path)
-    except Exception:
-        logger.exception(
-            "Impossible de charger ou valider la configuration Active Directory."
-        )
-        raise
 
-    START_USER_EMAIL = config["start_user_email"]
-    CLIENT_ID = config["client_id"]
-    AUTHORITY = config["authority"]
-    SCOPES = scopes
-    REPORT_DOMAIN = config["report_domain"].lstrip("@").casefold()
-    MAX_INTERMEDIATE_LEVELS = 2
-    MAX_CONCURRENT_REQUESTS = 8
-    MAX_RATE_LIMIT_RETRIES = 5
-    REQUEST_TIMEOUT_SECONDS = 30
-
-    def is_external_epsilon_email(email):
-        """Reconnaît l’adresse externe exclue du domaine de rapport."""
-        return (
-            email is not None
-            and email.casefold().endswith(f".ext@{REPORT_DOMAIN}")
-        )
-
-    logger.info("Initialisation de l’authentification Microsoft.")
-    try:
-        app = PublicClientApplication(CLIENT_ID, authority=AUTHORITY)
-        flow = app.initiate_device_flow(scopes=SCOPES)
-        if "user_code" not in flow:
-            raise Exception("Impossible d'initier la connexion.")
-
-        if on_device_code is None:
-            print("--- CONNEXION REQUISE ---")
-            print(flow["message"])
-        else:
-            on_device_code(
-                flow.get("verification_uri", "https://login.microsoft.com/device"),
-                flow["user_code"],
-            )
-        result = app.acquire_token_by_device_flow(flow)
-
-        if "access_token" not in result:
-            logger.error("L’authentification Microsoft a échoué.")
-            raise Exception(
-                f"Erreur d'authentification : {result.get('error_description')}"
-            )
-    except Exception:
-        logger.exception("Échec de l’authentification Microsoft.")
-        raise
-    logger.info("Authentification Microsoft réussie.")
-
-    headers = {"Authorization": f"Bearer {result['access_token']}"}
-
-    def request_graph(url):
-        """Interroge Microsoft Graph en respectant les limites de débit."""
-        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
-            try:
-                response = requests.get(
-                    url,
-                    headers=headers,
-                    timeout=REQUEST_TIMEOUT_SECONDS,
-                )
-            except requests.RequestException as error:
-                if attempt == MAX_RATE_LIMIT_RETRIES:
-                    raise
-                delay = 2**attempt
-                logger.warning(
-                    "Erreur reseau vers Microsoft Graph (%s) ; nouvelle tentative "
-                    "dans %.1f s.",
-                    error,
-                    delay,
-                )
-                time.sleep(delay)
-                continue
-            if response.status_code != 429:
-                return response
-
-            if attempt == MAX_RATE_LIMIT_RETRIES:
-                response.raise_for_status()
-
-            retry_after = response.headers.get("Retry-After", "")
-            try:
-                delay = float(retry_after)
-            except ValueError:
-                try:
-                    retry_at = parsedate_to_datetime(retry_after)
-                    if retry_at.tzinfo is None:
-                        retry_at = retry_at.replace(tzinfo=timezone.utc)
-                    delay = max(
-                        0,
-                        (retry_at - datetime.now(timezone.utc)).total_seconds(),
-                    )
-                except (TypeError, ValueError, OverflowError):
-                    delay = 2**attempt
-
-            logger.warning(
-                "Microsoft Graph limite les requêtes (429) ; nouvelle tentative "
-                "dans %.1f s.",
-                delay,
-            )
-            time.sleep(delay)
-
-    def fetch_user_record(user_id_or_email):
-        """Récupère un compte, son responsable et ses rapports directs."""
-        user_url = (
-            "https://graph.microsoft.com/v1.0/users/"
-            f"{user_id_or_email}?$select=id,displayName,mail,userPrincipalName,"
-            "jobTitle,department,officeLocation"
-        )
-        user_response = request_graph(user_url)
-        if user_response.status_code == 404:
-            return None
-        user_response.raise_for_status()
-        user_info = user_response.json()
-        user_id = user_info["id"]
-        email = user_info.get("mail")
-        is_epsilon_user = (
-            email is not None
-            and email.casefold().endswith(f"@{REPORT_DOMAIN}")
-        )
-
-        manager_email = None
-        if is_epsilon_user or user_id_or_email == START_USER_EMAIL:
-            manager_url = (
-                f"https://graph.microsoft.com/v1.0/users/{user_id}/manager"
-                "?$select=mail"
-            )
-            manager_response = request_graph(manager_url)
-            if manager_response.status_code != 404:
-                manager_response.raise_for_status()
-                manager_email = manager_response.json().get("mail")
-
-        reports_url = (
-            f"https://graph.microsoft.com/v1.0/users/{user_id}/directReports"
-            "?$select=id,mail,displayName"
-        )
-        direct_reports_data = []
-        while reports_url:
-            reports_response = request_graph(reports_url)
-            reports_response.raise_for_status()
-            reports_page = reports_response.json()
-            direct_reports_data.extend(reports_page.get("value", []))
-            reports_url = reports_page.get("@odata.nextLink")
-
-        user_entry = {
-            "id": user_id,
-            "identity": {
-                "name": user_info.get("displayName"),
-                "email": email,
-                "username": (
-                    user_info["userPrincipalName"].split("@", 1)[0]
-                    if user_info.get("userPrincipalName")
-                    else None
-                ),
-            },
-            "professional_info": {
-                "job_title": user_info.get("jobTitle"),
-                "business_unit": user_info.get("department"),
-                "work_location": user_info.get("officeLocation"),
-            },
-            "hierarchy": {
-                "manager_email": (
-                    None
-                    if is_external_epsilon_email(manager_email)
-                    else manager_email
-                ),
-                "direct_reports": [
-                    report["mail"]
-                    for report in direct_reports_data
-                    if report.get("mail")
-                    and not is_external_epsilon_email(report["mail"])
-                ],
-            },
-        }
-        return user_entry, direct_reports_data, is_epsilon_user
-
-    def add_exported_keys(keys_by_type, row):
-        """Ajoute les clés d’identification d’une ligne déjà exportée."""
-        for key_type, key in active_directory_keys(row).items():
-            if key:
-                keys_by_type[key_type].add(key)
-
-    def has_exported_key(keys_by_type, row):
-        """Indique si une ligne est déjà présente selon ses clés métier."""
-        return any(
-            key and key in keys_by_type[key_type]
-            for key_type, key in active_directory_keys(row).items()
-        )
-
-    def fetch_hierarchy(
-        writer,
-        pending,
-        processed_ids,
-        exported_count,
-        exported_keys_by_type,
-        temporary_path,
-        resume_state_path,
-    ):
-        """Parcourt la hiérarchie Graph et écrit les comptes retenus."""
-        nonlocal estimated_people
-        processed_ids = set(processed_ids)
-
-        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS) as executor:
-            while pending:
-                batch = pending
-                pending = []
-                results = executor.map(
-                    fetch_user_record,
-                    (item[0] for item in batch),
-                )
-                next_pending = {}
-
-                for (user_id_or_email, is_root, intermediate_levels), result in zip(
-                    batch, results
-                ):
-                    if result is None:
-                        logger.warning(
-                            "Compte %s introuvable dans Microsoft Graph.",
-                            user_id_or_email,
-                        )
-                        continue
-
-                    user_entry, direct_reports_data, is_epsilon_user = result
-                    user_id = user_entry["id"]
-                    if user_id in processed_ids:
-                        continue
-                    processed_ids.add(user_id)
-
-                    account_reference = (
-                        user_entry["identity"]["email"]
-                        or user_entry["identity"]["username"]
-                        or user_id
-                    )
-                    logger.info(
-                        "Compte Active Directory examiné : %s.",
-                        account_reference,
-                    )
-                    if (is_root or is_epsilon_user) and not is_external_epsilon_email(
-                        user_entry["identity"]["email"]
-                    ):
-                        if download_photos:
-                            try:
-                                _download_user_photo(
-                                    user_id,
-                                    user_entry["identity"]["username"],
-                                    output_dir / "photos",
-                                    request_graph,
-                                )
-                            except requests.HTTPError:
-                                logger.exception(
-                                    "Impossible de récupérer la photo du compte %s.",
-                                    account_reference,
-                                )
-                        row = _csv_row_from_user_entry(user_entry)
-                        writer.writerow([row[column] for column in CSV_HEADERS])
-                        add_exported_keys(exported_keys_by_type, row)
-                        exported_count += 1
-                        if on_progress is not None:
-                            estimated_people = next_progress_estimate(
-                                estimated_people,
-                                exported_count,
-                            )
-                            on_progress(
-                                exported_count,
-                                estimated_people,
-                                "collecting",
-                            )
-
-                    for report in direct_reports_data:
-                        mail = report.get("mail")
-                        if not mail:
-                            continue
-                        if mail.casefold().endswith(f"@{REPORT_DOMAIN}"):
-                            next_levels = 0
-                        elif intermediate_levels < MAX_INTERMEDIATE_LEVELS:
-                            next_levels = intermediate_levels + 1
-                        else:
-                            continue
-
-                        report_id = report["id"]
-                        previous = next_pending.get(report_id)
-                        if report_id not in processed_ids and (
-                            previous is None or next_levels < previous
-                        ):
-                            next_pending[report_id] = next_levels
-
-                pending = [
-                    (report_id, False, levels)
-                    for report_id, levels in next_pending.items()
-                ]
-                _save_resume_state(
-                    resume_state_path,
-                    {
-                        "temporary_csv_path": str(temporary_path),
-                        "pending": [
-                            {
-                                "user_id_or_email": user_id_or_email,
-                                "is_root": is_root,
-                                "intermediate_levels": intermediate_levels,
-                            }
-                            for (
-                                user_id_or_email,
-                                is_root,
-                                intermediate_levels,
-                            ) in pending
-                        ],
-                        "processed_ids": sorted(processed_ids),
-                        "exported_count": exported_count,
-                    },
-                )
-
-        logger.info(
-            "Collecte terminée : %s comptes examinés, %s personnes retenues.",
-            len(processed_ids),
-            exported_count,
-        )
-        return exported_count, exported_keys_by_type
-
-    def append_visible_previous_users(writer, exported_keys_by_type):
-        """Ajoute les comptes encore visibles absents de l’export précédent."""
-        nonlocal estimated_people
-        if previous_export_path is None:
-            logger.info("Aucun fichier d’export précédent fourni.")
-            return 0
-        if not previous_export_path.is_file():
-            raise FileNotFoundError(
-                "Le fichier d’export précédent est introuvable : "
-                f"{previous_export_path}"
-            )
-
-        logger.info(
-            "Comparaison avec l’export précédent : %s.",
-            previous_export_path,
-        )
-        _, previous_rows = read_csv(
-            previous_export_path,
-            ",",
-            {"Nom", "Email", "Identifiant", "Poste"},
-        )
-        missing_rows = [
-            row for row in previous_rows if not has_exported_key(exported_keys_by_type, row)
-        ]
-        logger.info(
-            "Comparaison export précédent : %s ligne(s), %s absente(s) du fichier courant.",
-            len(previous_rows),
-            len(missing_rows),
-        )
-
-        appended_count = 0
-        visible_count = 0
-        checked_users = set()
-        for previous_row in missing_rows:
-            candidate = (previous_row.get("Email") or "").strip()
-            if not candidate:
-                candidate = (previous_row.get("Identifiant") or "").strip()
-            if not candidate:
-                continue
-            candidate_key = candidate.casefold()
-            if candidate_key in checked_users:
-                continue
-            checked_users.add(candidate_key)
-
-            result = fetch_user_record(candidate)
-            if result is None:
-                continue
-            user_entry, _direct_reports_data, is_epsilon_user = result
-            is_start_user = (
-                (user_entry["identity"]["email"] or "").casefold()
-                == START_USER_EMAIL.casefold()
-            )
-            if (
-                not (is_epsilon_user or is_start_user)
-                or is_external_epsilon_email(user_entry["identity"]["email"])
-            ):
-                continue
-
-            visible_count += 1
-            row = _csv_row_from_user_entry(user_entry)
-            if has_exported_key(exported_keys_by_type, row):
-                continue
-            if download_photos:
-                account_reference = (
-                    user_entry["identity"]["email"]
-                    or user_entry["identity"]["username"]
-                    or user_entry["id"]
-                )
-                try:
-                    _download_user_photo(
-                        user_entry["id"],
-                        user_entry["identity"]["username"],
-                        output_dir / "photos",
-                        request_graph,
-                    )
-                except requests.HTTPError:
-                    logger.exception(
-                        "Impossible de récupérer la photo du compte %s.",
-                        account_reference,
-                    )
-            writer.writerow([row[column] for column in CSV_HEADERS])
-            add_exported_keys(exported_keys_by_type, row)
-            appended_count += 1
-            if on_progress is not None:
-                total_exported = exported_count + appended_count
-                estimated_people = next_progress_estimate(
-                    estimated_people,
-                    total_exported,
-                )
-                on_progress(
-                    total_exported,
-                    estimated_people,
-                    "collecting",
-                )
-
-        logger.info(
-            "Comparaison export précédent : %s compte(s) encore visible(s), %s ajouté(s).",
-            visible_count,
-            appended_count,
-        )
-        return appended_count
+    config, scopes = _load_config(config_path, logger)
+    access_token = _acquire_access_token(config, scopes, logger, on_device_code)
+    collector = ActiveDirectoryCollector(
+        config,
+        GraphClient(access_token, logger),
+        logger,
+        output_dir,
+        download_photos=download_photos,
+        on_progress=on_progress,
+        estimated_people=estimated_people,
+    )
 
     logger.info(
         "Récupération des photos %s.",
@@ -770,112 +729,45 @@ def run_active_directory_export(
     resume_state_path = output_dir / RESUME_STATE_FILENAME
     csv_filename = f"{date_prefix}_liste_salarie_active_directory.csv"
     csv_path = output_dir / csv_filename
-    temporary_path = None
-    resume_state = _load_resume_state(resume_state_path, logger)
-    exported_count = 0
-    exported_keys_by_type = {"email": set(), "matricule": set(), "name": set()}
-    pending = [(START_USER_EMAIL, True, 0)]
-    processed_ids = set()
-
-    if resume_state is not None:
-        candidate_path = Path(resume_state["temporary_csv_path"])
-        try:
-            _, resumed_rows = read_csv(
-                candidate_path,
-                ",",
-                PROGRESS_EXPORT_COLUMNS,
-            )
-            pending = [
-                (
-                    item["user_id_or_email"],
-                    item["is_root"],
-                    item["intermediate_levels"],
-                )
-                for item in resume_state["pending"]
-            ]
-            processed_ids = set(resume_state["processed_ids"])
-            for resumed_row in resumed_rows:
-                add_exported_keys(exported_keys_by_type, resumed_row)
-            exported_count = len(resumed_rows)
-            temporary_path = candidate_path
-            logger.info(
-                "Reprise d'un export interrompu : %s ligne(s) deja ecrite(s), "
-                "%s compte(s) en attente.",
-                exported_count,
-                len(pending),
-            )
-        except (KeyError, TypeError, ValueError, OSError, UnicodeError) as error:
-            logger.warning(
-                "Reprise impossible avec l'etat enregistre (%s) : %s. "
-                "Un nouvel export complet sera lance.",
-                candidate_path,
-                error,
-            )
-            temporary_path = None
-            resume_state_path.unlink(missing_ok=True)
+    state = _ExportState(collector.start_user_email)
+    _restore_resume_state(resume_state_path, state, logger)
 
     if on_progress is not None:
-        estimated_people = max(estimated_people, exported_count)
-        on_progress(exported_count, estimated_people, "collecting")
+        collector.estimated_people = max(
+            collector.estimated_people, state.exported_count
+        )
+        on_progress(
+            state.exported_count, collector.estimated_people, "collecting"
+        )
 
     appended_from_previous = 0
     try:
-        if temporary_path is None:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                newline="",
-                encoding="utf-8",
-                dir=output_dir,
-                prefix=f".{csv_filename}.",
-                suffix=".tmp",
-                delete=False,
-            ) as temporary_file:
-                temporary_path = Path(temporary_file.name)
-                writer = csv.writer(temporary_file)
-                writer.writerow(list(CSV_HEADERS))
-            _save_resume_state(
-                resume_state_path,
-                {
-                    "temporary_csv_path": str(temporary_path),
-                    "pending": [
-                        {
-                            "user_id_or_email": START_USER_EMAIL,
-                            "is_root": True,
-                            "intermediate_levels": 0,
-                        }
-                    ],
-                    "processed_ids": [],
-                    "exported_count": 0,
-                },
+        if state.temporary_path is None:
+            state.temporary_path = _create_temporary_export(
+                output_dir, csv_filename
             )
+            _save_resume_state(resume_state_path, state.to_resume_dict())
 
-        with temporary_path.open("a", newline="", encoding="utf-8") as output_stream:
+        with state.temporary_path.open(
+            "a", newline="", encoding="utf-8"
+        ) as output_stream:
             writer = csv.writer(output_stream)
-            exported_count, exported_keys_by_type = fetch_hierarchy(
-                writer,
-                pending,
-                processed_ids,
-                exported_count,
-                exported_keys_by_type,
-                temporary_path,
-                resume_state_path,
-            )
-            appended_from_previous = append_visible_previous_users(
-                writer,
-                exported_keys_by_type,
+            collector.collect_hierarchy(writer, state, resume_state_path)
+            appended_from_previous = collector.append_previous_users(
+                writer, state, previous_export_path
             )
 
-        if exported_count + appended_from_previous:
-            temporary_path.replace(csv_path)
+        if state.exported_count + appended_from_previous:
+            state.temporary_path.replace(csv_path)
         else:
-            temporary_path.unlink(missing_ok=True)
-            temporary_path = None
+            state.temporary_path.unlink(missing_ok=True)
+            state.temporary_path = None
         resume_state_path.unlink(missing_ok=True)
     except Exception:
         logger.exception(
             "Échec de la collecte ou de l’écriture de l’export Active Directory."
         )
-        if temporary_path is not None:
+        if state.temporary_path is not None:
             logger.info(
                 "Un état de reprise est conserve dans %s pour reprendre "
                 "automatiquement au prochain lancement.",
@@ -883,11 +775,12 @@ def run_active_directory_export(
             )
         raise
 
-    if exported_count + appended_from_previous:
+    total_exported = state.exported_count + appended_from_previous
+    if total_exported:
         logger.info(
             "Terminé : %s personnes exportées (+%s depuis l’export précédent) "
             "dans %s.",
-            exported_count,
+            state.exported_count,
             appended_from_previous,
             csv_path,
         )
@@ -896,18 +789,13 @@ def run_active_directory_export(
             "Terminé : aucun compte à exporter ; aucun fichier CSV créé."
         )
     if on_progress is not None:
-        total_exported = exported_count + appended_from_previous
         on_progress(
             total_exported,
-            max(estimated_people, total_exported),
+            max(collector.estimated_people, total_exported),
             "complete",
         )
 
-    return (
-        csv_path
-        if exported_count + appended_from_previous
-        else None
-    )
+    return csv_path if total_exported else None
 
 
 def main():

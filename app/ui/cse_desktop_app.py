@@ -1,10 +1,8 @@
-import json
 import os
 import shutil
 import threading
 import tkinter as tk
 import traceback
-import webbrowser
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -13,72 +11,27 @@ from tkinter import ttk
 
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
+from app.ui.constants import (
+    INPUT_DIRECTORY,
+    OUTPUT_DIRECTORY,
+    ACTIVE_DIRECTORY_OUTPUT,
+    ACTIVE_DIRECTORY_INPUT,
+    REQUIRED_COLUMNS,
+    TITLES,
+    INSTRUCTIONS,
+    INPUT_HIGHLIGHTS,
+    DELIMITERS,
+    DEFAULT_TEMPLATE_FILE,
+)
+from app.ui.active_directory_panel import ActiveDirectoryPanelMixin
+from app.ui.swile_config_editor import SwileConfigEditorMixin
 from services.csv_files import latest_valid_csv_in_directories, read_csv
-from services.paths import bundled_resource, project_root
+from services.paths import bundled_resource
+from services.version import __version__
 from services.swile_service import (
-    SWILE_CONFIG_PATH,
     execute_swile_action,
-    load_addition_filters,
-    load_work_location_mapping,
-    save_work_location_mapping,
 )
-from services.active_directory_export import (
-    apply_config_defaults,
-    get_config_path,
-    run_active_directory_export,
-    save_active_directory_config,
-    validate_config,
-)
-
-ROOT_DIRECTORY = project_root()
-SWILE_DIRECTORY = ROOT_DIRECTORY / "swile_active_directory"
-INPUT_DIRECTORY = SWILE_DIRECTORY / "in"
-OUTPUT_DIRECTORY = SWILE_DIRECTORY / "out"
-ACTIVE_DIRECTORY_OUTPUT = ROOT_DIRECTORY / "liste_salarie_active_directory" / "out"
-ACTIVE_DIRECTORY_INPUT = ROOT_DIRECTORY / "liste_salarie_active_directory" / "in"
-REQUIRED_COLUMNS = {
-    "swile": {"Prénom", "Nom", "Email", "Matricule"},
-    "active_directory": {"Nom", "Email", "Identifiant", "Poste"},
-    "active_directory_previous": {"Nom", "Email", "Identifiant", "Poste"},
-    "template": {"Prénom", "Nom", "Email", "Matricule"},
-}
-TITLES = {
-    "swile": "FICHIER SWILE - Liste actuelle des salariés",
-    "active_directory": "FICHIER ACTIVE DIRECTORY - Export des salariés",
-    "active_directory_previous": "FICHIER ACTIVE DIRECTORY PRECEDENT (optionnel)",
-    "template": "MODELE SWILE - CSV d'import",
-}
-INSTRUCTIONS = {
-    "swile": "CSV SWILE ATTENDU ici (séparateur « ; »).",
-    "active_directory": "CSV ACTIVE DIRECTORY ATTENDU ici (séparateur « , »).",
-    "active_directory_previous": (
-        "CSV ACTIVE DIRECTORY PRECEDENT (optionnel) pour compléter "
-        "les comptes manquants s’ils sont toujours visibles."
-    ),
-    "template": "MODELE SWILE ATTENDU ici (séparateur « ; »).",
-}
-INPUT_HIGHLIGHTS = {
-    "swile": ("SWILE", "#0a4f8a"),
-    "active_directory": ("ACTIVE DIRECTORY", "#176b35"),
-    "active_directory_previous": ("ACTIVE DIRECTORY PRECEDENT", "#0f5b7a"),
-    "template": ("MODELE SWILE", "#176b35"),
-}
-DELIMITERS = {
-    "swile": ";",
-    "active_directory": ",",
-    "active_directory_previous": ",",
-    "template": ";",
-}
-DEFAULT_TEMPLATE_FILE = (
-    "collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv"
-)
-ACTIVE_DIRECTORY_CONFIG_FIELDS = (
-    ("start_user_email", "Adresse de départ"),
-    ("client_id", "Identifiant de l’application"),
-    ("authority", "Autorité Microsoft"),
-    ("report_domain", "Domaine de rapport"),
-)
-
+from services.active_directory_export import run_active_directory_export
 
 class _OutputWriter:
     def __init__(self, app):
@@ -102,11 +55,11 @@ class _OutputWriter:
         return "".join(self.parts)
 
 
-class CSEFileManager(TkinterDnD.Tk):
+class CSEFileManager(SwileConfigEditorMixin, ActiveDirectoryPanelMixin, TkinterDnD.Tk):
     def __init__(self):
         """Construit la fenêtre, ses onglets et les panneaux de suivi."""
         super().__init__()
-        self.title("Gestion des fichiers CSE")
+        self.title(f"Gestion des fichiers CSE — {__version__}")
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         window_width = min(1500, max(960, int(screen_width * 0.9)))
@@ -136,7 +89,23 @@ class CSEFileManager(TkinterDnD.Tk):
         self.bind_all("<MouseWheel>", self._on_tab_mousewheel)
         self.bind_all("<Button-4>", self._on_tab_mousewheel)
         self.bind_all("<Button-5>", self._on_tab_mousewheel)
+        self._build_heading()
+        self._build_layout()
+        self._build_results_panel()
+        active_directory_tab = tk.Frame(self.tabs)
+        swile_tab = tk.Frame(self.tabs, padx=12, pady=12)
+        self.tabs.add(active_directory_tab, text="liste_salarie_active_directory")
+        self.tabs.add(swile_tab, text="swile_active_directory")
+        self._build_active_directory_tab(active_directory_tab)
+        self._build_swile_tab(swile_tab)
+        self._load_work_location_mapping()
+        self._load_active_directory_config()
+        self._refresh_file_labels()
+        self._set_previous_export_section_default_visibility()
+        self.after(100, self._position_main_pane_sash)
 
+    def _build_heading(self):
+        """Construit l’en-tête de la fenêtre."""
         heading = tk.Frame(self)
         heading.pack(fill="x", pady=(0, 10))
         tk.Label(
@@ -156,6 +125,8 @@ class CSEFileManager(TkinterDnD.Tk):
             fg="#555555",
         ).pack(anchor="w", pady=(3, 0))
 
+    def _build_layout(self):
+        """Construit le panneau principal et le conteneur d’onglets."""
         self.main_pane = tk.PanedWindow(
             self,
             orient="horizontal",
@@ -170,6 +141,8 @@ class CSEFileManager(TkinterDnD.Tk):
         self.tabs.pack(fill="both", expand=True)
         self.main_pane.add(workspace, minsize=620, stretch="always")
 
+    def _build_results_panel(self):
+        """Construit le panneau de suivi, de progression et de résultats."""
         results_panel = tk.LabelFrame(
             self.main_pane,
             text="Suivi et résultats",
@@ -223,10 +196,8 @@ class CSEFileManager(TkinterDnD.Tk):
         )
         self.output.pack(fill="both", expand=True, pady=(4, 8))
 
-        active_directory_tab = tk.Frame(self.tabs)
-        swile_tab = tk.Frame(self.tabs, padx=12, pady=12)
-        self.tabs.add(active_directory_tab, text="liste_salarie_active_directory")
-        self.tabs.add(swile_tab, text="swile_active_directory")
+    def _build_active_directory_tab(self, active_directory_tab):
+        """Construit l’onglet de génération de l’export Active Directory."""
         active_directory_content = self._create_scrollable_tab(
             active_directory_tab, padx=12, pady=12
         )
@@ -265,166 +236,11 @@ class CSEFileManager(TkinterDnD.Tk):
             text="Récupérer les photos (les photos déjà téléchargées seront conservées)",
             variable=self.download_photos,
         ).pack(anchor="w", pady=(3, 0))
-        config_container = tk.Frame(active_directory_primary)
-        config_container.pack(fill="x", pady=(0, 8))
-        self.active_directory_config_expanded = tk.BooleanVar(value=False)
-        self.active_directory_config_toggle = ttk.Checkbutton(
-            config_container,
-            text="Afficher la configuration Active Directory",
-            variable=self.active_directory_config_expanded,
-            command=self._toggle_active_directory_config,
-        )
-        self.active_directory_config_toggle.pack(anchor="w")
-        config_section = tk.LabelFrame(
-            config_container,
-            text="Paramètres Active Directory",
-            padx=10,
-            pady=7,
-        )
-        self.active_directory_config_section = config_section
-        tk.Label(
-            config_section,
-            text=f"Fichier : {get_config_path()}",
-            anchor="w",
-            justify="left",
-            wraplength=760,
-        ).pack(fill="x", pady=(0, 4))
-        config_fields = tk.Frame(config_section)
-        config_fields.pack(fill="x", expand=True)
-        config_fields.columnconfigure(1, weight=1)
-        config_fields.columnconfigure(3, weight=1)
-        self.active_directory_config_vars = {}
-        self.active_directory_config_controls = []
-        for index, (field, label) in enumerate(
-            ACTIVE_DIRECTORY_CONFIG_FIELDS
-        ):
-            row = (index // 2) * 2
-            column = (index % 2) * 2
-            tk.Label(config_fields, text=label, anchor="w").grid(
-                row=row,
-                column=column,
-                sticky="w",
-                padx=(0, 6 if column == 0 else 12),
-                pady=(2, 0),
-            )
-            value = tk.StringVar()
-            entry = tk.Entry(config_fields, textvariable=value)
-            entry.grid(
-                row=row + 1,
-                column=column,
-                columnspan=2,
-                sticky="ew",
-                padx=(0, 12 if column == 0 else 0),
-                pady=(0, 4),
-            )
-            entry.bind("<KeyRelease>", self._mark_active_directory_config_dirty)
-            entry.bind("<<Paste>>", self._mark_active_directory_config_dirty)
-            self.active_directory_config_vars[field] = value
-            self.active_directory_config_controls.append(entry)
+        self._build_active_directory_config_section(active_directory_primary)
+        self._build_previous_export_section(active_directory_optional)
 
-        scopes_row = len(ACTIVE_DIRECTORY_CONFIG_FIELDS)
-        tk.Label(
-            config_fields,
-            text="Autorisations (scopes, une par ligne)",
-            anchor="w",
-        ).grid(row=scopes_row, column=0, columnspan=4, sticky="w")
-        self.active_directory_scopes_editor = ScrolledText(
-            config_fields,
-            height=3,
-            wrap="word",
-        )
-        self.active_directory_scopes_editor.grid(
-            row=scopes_row + 1,
-            column=0,
-            columnspan=4,
-            sticky="ew",
-        )
-        self.active_directory_scopes_editor.bind(
-            "<KeyRelease>", self._mark_active_directory_config_dirty
-        )
-        self.active_directory_scopes_editor.bind(
-            "<<Paste>>", self._mark_active_directory_config_dirty
-        )
-        self.active_directory_config_controls.append(
-            self.active_directory_scopes_editor
-        )
-        self.active_directory_config_dirty = False
-        config_actions = tk.Frame(config_section)
-        config_actions.pack(fill="x", pady=(5, 0))
-        self.active_directory_config_status = tk.StringVar(value="")
-        save_config_button = tk.Button(
-            config_actions,
-            text="Enregistrer la configuration",
-            command=self._save_active_directory_config,
-        )
-        save_config_button.pack(side="left")
-        reload_config_button = tk.Button(
-            config_actions,
-            text="Recharger",
-            command=self._load_active_directory_config,
-        )
-        reload_config_button.pack(side="left", padx=(6, 0))
-        self.active_directory_config_controls.extend(
-            (
-                self.active_directory_config_toggle,
-                save_config_button,
-                reload_config_button,
-            )
-        )
-        tk.Label(
-            config_actions,
-            textvariable=self.active_directory_config_status,
-            anchor="e",
-            fg="#555555",
-        ).pack(side="right", fill="x", expand=True, padx=(8, 0))
-        self.previous_export_expanded = tk.BooleanVar(value=False)
-        self.previous_export_toggle = ttk.Checkbutton(
-            active_directory_optional,
-            text="Afficher le complément de configuration facultatif",
-            variable=self.previous_export_expanded,
-            command=self._toggle_previous_export_section,
-        )
-        self.previous_export_toggle.pack(anchor="w", pady=(0, 4))
-        previous_export_container = tk.Frame(active_directory_optional)
-        previous_export_container.pack(fill="x")
-        previous_export_section = tk.LabelFrame(
-            previous_export_container,
-            text="Complément de configuration facultatif",
-            padx=10,
-            pady=8,
-        )
-        self.previous_export_section = previous_export_section
-        tk.Label(
-            previous_export_section,
-            text=(
-                "Un export précédent peut servir à conserver les comptes "
-                "encore visibles qui ne sont pas retournés par la collecte."
-            ),
-            anchor="w",
-            justify="left",
-            wraplength=380,
-            fg="#555555",
-        ).pack(fill="x", pady=(0, 4))
-        self._create_input_card(
-            "active_directory_previous", previous_export_section
-        ).pack(fill="x", pady=4)
-        tk.Label(
-            active_directory_optional,
-            text=f"CSV créé dans : {ACTIVE_DIRECTORY_OUTPUT}",
-            anchor="w",
-            justify="left",
-            wraplength=480,
-            fg="#555555",
-        ).pack(fill="x", pady=(8, 0))
-        tk.Label(
-            active_directory_optional,
-            text=f"Journaux : {ROOT_DIRECTORY / 'log'}",
-            anchor="w",
-            justify="left",
-            wraplength=480,
-            fg="#555555",
-        ).pack(fill="x", pady=(4, 0))
-
+    def _build_swile_tab(self, swile_tab):
+        """Construit l’onglet Swile et ses sous-onglets."""
         swile_subtabs = ttk.Notebook(swile_tab)
         swile_subtabs.pack(fill="both", expand=True)
         compare_lists_tab = tk.Frame(swile_subtabs)
@@ -457,88 +273,9 @@ class CSEFileManager(TkinterDnD.Tk):
             "Comparer les listes et préparer les ajouts Swile",
             "all",
         )
-        addition_filters_section = tk.Frame(compare_section)
-        addition_filters_section.grid(
-            row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0)
-        )
-        for filter_name, filter_title in (
-            (
-                "email",
-                "Filtrage des adresses e-mail "
-                "(fichier de création des ajouts Swile)",
-            ),
-            (
-                "poste",
-                "Filtrage des postes "
-                "(fichier de création des ajouts Swile)",
-            ),
-        ):
-            filter_container = tk.Frame(addition_filters_section)
-            filter_container.pack(fill="x")
-            filter_toggle = ttk.Checkbutton(
-                filter_container,
-                text=(
-                    "Afficher le filtrage des e-mails pour le fichier de "
-                    "création des ajouts Swile"
-                    if filter_name == "email"
-                    else "Afficher le filtrage des postes pour le fichier "
-                    "de création des ajouts Swile"
-                ),
-                variable=self.addition_filter_expanded[filter_name],
-                command=lambda selected=filter_name: (
-                    self._toggle_addition_filter_section(selected)
-                ),
-            )
-            filter_toggle.pack(anchor="w", pady=(0, 4))
-            self.addition_filter_toggle_controls[filter_name] = filter_toggle
-            self.work_location_mapping_controls.append(filter_toggle)
-            filter_section = self._create_addition_filter_editor(
-                filter_container,
-                filter_name,
-                filter_title,
-            )
-            self.addition_filter_sections[filter_name] = filter_section
-        location_values_section = tk.LabelFrame(
-            location_values_content,
-            text="Générer les valeurs de lieu de travail",
-            padx=10,
-            pady=8,
-        )
-        location_values_section.pack(fill="x", pady=(0, 4))
-        self._create_run_button(
-            location_values_section,
-            "Générer le CSV Prénom / Nom de famille / E-mail / Matricule / Valeur",
-            "location_values",
-        )
-        tk.Label(
-            location_values_section,
-            text=(
-                "Cette étape génère un CSV à partir des salariés Swile trouvés "
-                "dans Active Directory et des ajouts admissibles selon les "
-                "filtres configurés dans « Comparer les listes »."
-            ),
-            anchor="w",
-            justify="left",
-            wraplength=760,
-        ).pack(fill="x", pady=(2, 2))
-        tk.Label(
-            location_values_section,
-            text=(
-                "Valeurs générées automatiquement : Paris 145, Lille 5.9, "
-                "Paris 133 ou Autre."
-            ),
-            anchor="w",
-            justify="left",
-            wraplength=760,
-            fg="#555555",
-        ).pack(fill="x")
-
+        self._build_addition_filter_toggles(compare_section)
+        self._build_location_values_section(location_values_content)
         self._create_work_location_mapping_editor(location_values_content)
-        self._load_work_location_mapping()
-        self._load_active_directory_config()
-        self._refresh_file_labels()
-        self._set_previous_export_section_default_visibility()
-        self.after(100, self._position_main_pane_sash)
 
     def _create_scrollable_tab(self, parent, padx=0, pady=0):
         """Ajoute un contenu défilant verticalement dans un onglet."""
@@ -601,652 +338,6 @@ class CSEFileManager(TkinterDnD.Tk):
                 min(pane_width - 260, pane_width - 360),
             )
             self.main_pane.sash_place(0, sash_position, 0)
-
-    def _load_active_directory_config(self):
-        """Charge les paramètres AD et ouvre le panneau si la config est invalide."""
-        if self.active_directory_config_dirty and not messagebox.askyesno(
-            "Recharger la configuration ?",
-            "Les modifications non enregistrées seront perdues. Continuer ?",
-            parent=self,
-        ):
-            return
-        config_path = get_config_path()
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-            if not isinstance(config, dict):
-                raise ValueError(
-                    "La configuration doit contenir un objet JSON."
-                )
-            config = apply_config_defaults(config)
-            for field, _ in ACTIVE_DIRECTORY_CONFIG_FIELDS:
-                value = config.get(field, "")
-                self.active_directory_config_vars[field].set(
-                    value if isinstance(value, str) else json.dumps(value)
-                )
-            scopes = config.get("scopes", [])
-            if isinstance(scopes, list):
-                scopes_text = "\n".join(str(scope) for scope in scopes)
-            else:
-                scopes_text = json.dumps(scopes)
-            self.active_directory_scopes_editor.delete("1.0", "end")
-            self.active_directory_scopes_editor.insert("1.0", scopes_text)
-            self.active_directory_config_dirty = False
-            try:
-                validate_config(config, config_path)
-            except ValueError as error:
-                self.active_directory_config_status.set(
-                    f"Configuration à compléter : {error}"
-                )
-                self.active_directory_config_expanded.set(True)
-            else:
-                self.active_directory_config_status.set(
-                    "Configuration chargée."
-                )
-                self.active_directory_config_expanded.set(False)
-        except (OSError, UnicodeError, ValueError) as error:
-            self.active_directory_config_status.set(
-                f"Configuration à renseigner : {error}"
-            )
-            self.active_directory_config_expanded.set(True)
-        self._toggle_active_directory_config()
-
-    def _toggle_active_directory_config(self):
-        """Affiche ou replie les paramètres Active Directory."""
-        if self.active_directory_config_expanded.get():
-            if not self.active_directory_config_section.winfo_manager():
-                self.active_directory_config_section.pack(
-                    fill="x", pady=(0, 8)
-                )
-            self.active_directory_config_toggle.configure(
-                text="Masquer la configuration Active Directory"
-            )
-        else:
-            self.active_directory_config_section.pack_forget()
-            self.active_directory_config_toggle.configure(
-                text="Afficher la configuration Active Directory"
-            )
-
-    def _toggle_previous_export_section(self):
-        """Affiche ou masque le complément d’export précédent."""
-        if self.previous_export_expanded.get():
-            if not self.previous_export_section.winfo_manager():
-                self.previous_export_section.pack(
-                    fill="x", pady=(0, 8)
-                )
-            self.previous_export_toggle.configure(
-                text="Masquer le complément de configuration facultatif"
-            )
-        else:
-            self.previous_export_section.pack_forget()
-            self.previous_export_toggle.configure(
-                text="Afficher le complément de configuration facultatif"
-            )
-
-    def _set_previous_export_section_default_visibility(self):
-        """Ouvre le complément uniquement si aucun export précédent n’existe."""
-        self.previous_export_expanded.set(
-            self._current_file("active_directory_previous") is None
-        )
-        self._toggle_previous_export_section()
-
-    def _create_work_location_mapping_editor(self, parent):
-        """Construit l’éditeur graphique du mapping des lieux de travail."""
-        section = tk.LabelFrame(
-            parent,
-            text="Configurer le mapping des lieux",
-            padx=10,
-            pady=8,
-        )
-        section.pack(fill="both", expand=True, pady=(8, 0))
-        tk.Label(
-            section,
-            text=(
-                f"Fichier : {SWILE_CONFIG_PATH}\n"
-                "Pour les lieux, les règles sont évaluées de haut en bas et "
-                "tous les mots-clés d’un motif doivent apparaître. Pour les "
-                "filtres, la première règle correspondante décide d’inclure "
-                "ou d’exclure; tous les termes d’un motif sont requis."
-            ),
-            anchor="w",
-            justify="left",
-            wraplength=760,
-        ).pack(fill="x", pady=(0, 6))
-
-        default_row = tk.Frame(section)
-        default_row.pack(fill="x", pady=(0, 6))
-        tk.Label(default_row, text="Valeur par défaut :", anchor="w").pack(
-            side="left"
-        )
-        self.work_location_default_value = tk.StringVar(value="Autre")
-        self.work_location_default_entry = tk.Entry(
-            default_row,
-            textvariable=self.work_location_default_value,
-            width=28,
-        )
-        self.work_location_default_entry.pack(side="left", padx=(6, 0))
-        self.work_location_default_entry.bind(
-            "<KeyRelease>", self._mark_work_location_mapping_dirty
-        )
-        self.work_location_default_entry.bind(
-            "<<Paste>>", self._mark_work_location_mapping_dirty
-        )
-
-        header = tk.Frame(section)
-        header.pack(fill="x")
-        header.columnconfigure(0, weight=3)
-        header.columnconfigure(1, weight=2)
-        tk.Label(header, text="Mots-clés (séparés par ;)").grid(
-            row=0, column=0, sticky="w", padx=(0, 6)
-        )
-        tk.Label(header, text="Valeur Swile").grid(
-            row=0, column=1, sticky="w"
-        )
-        self.work_location_rules_frame = tk.Frame(section)
-        self.work_location_rules_frame.columnconfigure(0, weight=1)
-        self.work_location_rules_frame.pack(fill="x")
-        self.work_location_mapping_rows = []
-        self.work_location_mapping_dirty = False
-
-        actions = tk.Frame(section)
-        actions.pack(fill="x", pady=(6, 0))
-        self.work_location_add_button = tk.Button(
-            actions,
-            text="＋ Ajouter une règle",
-            command=lambda: self._add_work_location_rule(mark_dirty=True),
-        )
-        self.work_location_add_button.pack(side="left")
-        self.work_location_save_button = tk.Button(
-            actions,
-            text="Enregistrer la configuration",
-            command=self._save_work_location_mapping,
-        )
-        self.work_location_save_button.pack(side="left", padx=(6, 0))
-        self.work_location_reload_button = tk.Button(
-            actions,
-            text="Recharger",
-            command=self._load_work_location_mapping,
-        )
-        self.work_location_reload_button.pack(side="left", padx=(6, 0))
-        self.work_location_mapping_status = tk.StringVar(value="")
-        tk.Label(
-            actions,
-            textvariable=self.work_location_mapping_status,
-            anchor="e",
-            fg="#555555",
-        ).pack(side="right", fill="x", expand=True, padx=(8, 0))
-        self.work_location_mapping_controls.extend(
-            (
-                self.work_location_add_button,
-                self.work_location_save_button,
-                self.work_location_reload_button,
-            )
-        )
-
-    def _create_addition_filter_editor(
-        self, parent, filter_name, filter_title
-    ):
-        """Construit l’éditeur de règles pour un filtre des ajouts."""
-        filter_section = tk.LabelFrame(
-            parent,
-            text=filter_title,
-            padx=8,
-            pady=5,
-        )
-        default_frame = tk.Frame(filter_section)
-        default_frame.pack(fill="x", pady=(0, 4))
-        tk.Label(
-            default_frame,
-            text="Valeur par défaut :",
-            anchor="w",
-        ).pack(side="left")
-        default_value = tk.StringVar(value="inclure")
-        default_entry = ttk.Combobox(
-            default_frame,
-            textvariable=default_value,
-            values=("inclure", "exclure"),
-            state="readonly",
-            width=12,
-        )
-        default_entry.pack(side="left", padx=(6, 0))
-        default_entry.bind(
-            "<<ComboboxSelected>>", self._mark_work_location_mapping_dirty
-        )
-        self.addition_filter_default_values[filter_name] = default_value
-        self.addition_filter_default_entries[filter_name] = default_entry
-        self.work_location_mapping_controls.append(default_entry)
-        header = tk.Frame(filter_section)
-        header.pack(fill="x")
-        header.columnconfigure(0, weight=3)
-        header.columnconfigure(1, weight=1)
-        tk.Label(header, text="Motifs (termes séparés par ;)").grid(
-            row=0, column=0, sticky="w", padx=(0, 6)
-        )
-        tk.Label(header, text="Valeur").grid(row=0, column=1, sticky="w")
-        rules_frame = tk.Frame(filter_section)
-        rules_frame.columnconfigure(0, weight=1)
-        rules_frame.pack(fill="x")
-        self.addition_filter_rows[filter_name] = []
-        self.addition_filter_rules_frames[filter_name] = rules_frame
-        add_button = tk.Button(
-            filter_section,
-            text="＋ Ajouter une règle",
-            command=lambda selected=filter_name: (
-                self._add_addition_filter_rule(selected, mark_dirty=True)
-            ),
-        )
-        add_button.pack(anchor="w", pady=(4, 0))
-        self.addition_filter_add_buttons[filter_name] = add_button
-        self.work_location_mapping_controls.append(add_button)
-        return filter_section
-
-    def _toggle_addition_filter_section(self, filter_name):
-        """Affiche ou masque un panneau de règles de filtrage des ajouts."""
-        section = self.addition_filter_sections[filter_name]
-        if self.addition_filter_expanded[filter_name].get():
-            if not section.winfo_manager():
-                section.pack(fill="x", pady=(0, 8))
-        else:
-            section.pack_forget()
-
-    def _add_work_location_rule(self, pattern="", value="", mark_dirty=False):
-        """Ajoute une ligne de mots-clés et sa valeur Swile associée."""
-        row_frame = tk.Frame(self.work_location_rules_frame)
-        row_frame.columnconfigure(0, weight=3)
-        row_frame.columnconfigure(1, weight=2)
-        pattern_var = tk.StringVar(value=pattern)
-        value_var = tk.StringVar(value=value)
-        pattern_entry = tk.Entry(row_frame, textvariable=pattern_var)
-        pattern_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        value_entry = tk.Entry(row_frame, textvariable=value_var)
-        value_entry.grid(row=0, column=1, sticky="ew", padx=(0, 6))
-        pattern_entry.bind("<KeyRelease>", self._mark_work_location_mapping_dirty)
-        pattern_entry.bind("<<Paste>>", self._mark_work_location_mapping_dirty)
-        value_entry.bind("<KeyRelease>", self._mark_work_location_mapping_dirty)
-        value_entry.bind("<<Paste>>", self._mark_work_location_mapping_dirty)
-        move_up_button = tk.Button(
-            row_frame,
-            text="↑",
-            width=2,
-            command=lambda selected=row_frame: self._move_work_location_rule(
-                selected, -1
-            ),
-        )
-        move_up_button.grid(row=0, column=2, padx=(0, 2))
-        move_down_button = tk.Button(
-            row_frame,
-            text="↓",
-            width=2,
-            command=lambda selected=row_frame: self._move_work_location_rule(
-                selected, 1
-            ),
-        )
-        move_down_button.grid(row=0, column=3, padx=(0, 2))
-        remove_button = tk.Button(
-            row_frame,
-            text="×",
-            width=2,
-            command=lambda selected=row_frame: self._remove_work_location_rule(
-                selected
-            ),
-        )
-        remove_button.grid(row=0, column=4)
-        row = {
-            "frame": row_frame,
-            "pattern": pattern_var,
-            "value": value_var,
-            "controls": (
-                pattern_entry,
-                value_entry,
-                move_up_button,
-                move_down_button,
-                remove_button,
-            ),
-            "move_up": move_up_button,
-            "move_down": move_down_button,
-        }
-        self.work_location_mapping_rows.append(row)
-        self.work_location_mapping_controls.extend(row["controls"])
-        self._refresh_work_location_rule_rows()
-        if mark_dirty:
-            self.work_location_mapping_dirty = True
-
-    def _refresh_work_location_rule_rows(self):
-        """Actualise l’ordre et l’état des commandes de déplacement."""
-        last_index = len(self.work_location_mapping_rows) - 1
-        for index, row in enumerate(self.work_location_mapping_rows):
-            row["frame"].grid(
-                row=index,
-                column=0,
-                sticky="ew",
-                pady=2,
-            )
-            row["move_up"].configure(state="disabled" if index == 0 else "normal")
-            row["move_down"].configure(
-                state="disabled" if index == last_index else "normal"
-            )
-
-    def _add_addition_filter_rule(
-        self, filter_name, pattern="", value="exclure", mark_dirty=False
-    ):
-        """Ajoute un motif et son action à l’un des filtres d’ajouts."""
-        row_frame = tk.Frame(self.addition_filter_rules_frames[filter_name])
-        row_frame.columnconfigure(0, weight=3)
-        row_frame.columnconfigure(1, weight=1)
-        pattern_var = tk.StringVar(value=pattern)
-        value_var = tk.StringVar(value=value)
-        pattern_entry = tk.Entry(row_frame, textvariable=pattern_var)
-        pattern_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        pattern_entry.bind(
-            "<KeyRelease>", self._mark_work_location_mapping_dirty
-        )
-        pattern_entry.bind(
-            "<<Paste>>", self._mark_work_location_mapping_dirty
-        )
-        value_entry = ttk.Combobox(
-            row_frame,
-            textvariable=value_var,
-            values=("inclure", "exclure"),
-            state="readonly",
-            width=12,
-        )
-        value_entry.grid(row=0, column=1, sticky="w", padx=(0, 6))
-        value_entry.bind(
-            "<<ComboboxSelected>>", self._mark_work_location_mapping_dirty
-        )
-        move_up_button = tk.Button(
-            row_frame,
-            text="↑",
-            width=2,
-            command=lambda selected=row_frame: self._move_addition_filter_rule(
-                filter_name, selected, -1
-            ),
-        )
-        move_up_button.grid(row=0, column=2, padx=(0, 2))
-        move_down_button = tk.Button(
-            row_frame,
-            text="↓",
-            width=2,
-            command=lambda selected=row_frame: self._move_addition_filter_rule(
-                filter_name, selected, 1
-            ),
-        )
-        move_down_button.grid(row=0, column=3, padx=(0, 2))
-        remove_button = tk.Button(
-            row_frame,
-            text="×",
-            width=2,
-            command=lambda selected=row_frame: self._remove_addition_filter_rule(
-                filter_name, selected
-            ),
-        )
-        remove_button.grid(row=0, column=4)
-        row = {
-            "frame": row_frame,
-            "pattern": pattern_var,
-            "value": value_var,
-            "controls": (
-                pattern_entry,
-                value_entry,
-                move_up_button,
-                move_down_button,
-                remove_button,
-            ),
-            "move_up": move_up_button,
-            "move_down": move_down_button,
-        }
-        self.addition_filter_rows[filter_name].append(row)
-        self.work_location_mapping_controls.extend(row["controls"])
-        self._refresh_addition_filter_rule_rows(filter_name)
-        if mark_dirty:
-            self.work_location_mapping_dirty = True
-
-    def _refresh_addition_filter_rule_rows(self, filter_name):
-        rows = self.addition_filter_rows[filter_name]
-        last_index = len(rows) - 1
-        for index, row in enumerate(rows):
-            row["frame"].grid(row=index, column=0, sticky="ew", pady=2)
-            row["move_up"].configure(state="disabled" if index == 0 else "normal")
-            row["move_down"].configure(
-                state="disabled" if index == last_index else "normal"
-            )
-
-    def _move_addition_filter_rule(self, filter_name, row_frame, offset):
-        rows = self.addition_filter_rows[filter_name]
-        current_index = next(
-            index
-            for index, row in enumerate(rows)
-            if row["frame"] is row_frame
-        )
-        target_index = current_index + offset
-        if not 0 <= target_index < len(rows):
-            return
-        row = rows.pop(current_index)
-        rows.insert(target_index, row)
-        self._refresh_addition_filter_rule_rows(filter_name)
-        self.work_location_mapping_dirty = True
-
-    def _remove_addition_filter_rule(self, filter_name, row_frame):
-        rows = self.addition_filter_rows[filter_name]
-        row_index = next(
-            index
-            for index, row in enumerate(rows)
-            if row["frame"] is row_frame
-        )
-        row = rows.pop(row_index)
-        for control in row["controls"]:
-            self.work_location_mapping_controls.remove(control)
-        row_frame.destroy()
-        self._refresh_addition_filter_rule_rows(filter_name)
-        self.work_location_mapping_dirty = True
-
-    def _move_work_location_rule(self, row_frame, offset):
-        """Déplace une règle d’un rang et met à jour son ordre de priorité."""
-        current_index = next(
-            index
-            for index, row in enumerate(self.work_location_mapping_rows)
-            if row["frame"] is row_frame
-        )
-        target_index = current_index + offset
-        if not 0 <= target_index < len(self.work_location_mapping_rows):
-            return
-        row = self.work_location_mapping_rows.pop(current_index)
-        self.work_location_mapping_rows.insert(target_index, row)
-        self._refresh_work_location_rule_rows()
-        self.work_location_mapping_dirty = True
-
-    def _remove_work_location_rule(self, row_frame):
-        """Supprime une règle du formulaire."""
-        row_index = next(
-            index
-            for index, row in enumerate(self.work_location_mapping_rows)
-            if row["frame"] is row_frame
-        )
-        row = self.work_location_mapping_rows.pop(row_index)
-        for control in row["controls"]:
-            self.work_location_mapping_controls.remove(control)
-        row_frame.destroy()
-        self._refresh_work_location_rule_rows()
-        self.work_location_mapping_dirty = True
-
-    def _mark_work_location_mapping_dirty(self, event):
-        """Signale une modification non enregistrée du mapping."""
-        if event.widget is not None:
-            self.work_location_mapping_dirty = True
-
-    def _load_work_location_mapping(self):
-        """Charge les règles du fichier ou les règles par défaut."""
-        if self.work_location_mapping_dirty and not messagebox.askyesno(
-            "Recharger le mapping ?",
-            "Les modifications non enregistrées seront perdues. Continuer ?",
-            parent=self,
-        ):
-            return
-        try:
-            mapping = load_work_location_mapping()
-            filters = load_addition_filters()
-        except (OSError, UnicodeError, ValueError) as error:
-            self.work_location_mapping_status.set("Chargement impossible.")
-            messagebox.showerror(
-                "Configuration du mapping invalide",
-                str(error),
-                parent=self,
-            )
-            return
-
-        for row in self.work_location_mapping_rows:
-            row["frame"].destroy()
-        self.work_location_mapping_rows.clear()
-        for filter_name, rows in self.addition_filter_rows.items():
-            for row in rows:
-                row["frame"].destroy()
-            rows.clear()
-        self.work_location_mapping_controls = [
-            self.work_location_default_entry,
-            *self.addition_filter_default_entries.values(),
-            *self.addition_filter_add_buttons.values(),
-            *self.addition_filter_toggle_controls.values(),
-            self.work_location_add_button,
-            self.work_location_save_button,
-            self.work_location_reload_button,
-        ]
-        self.work_location_default_value.set(mapping["default_value"])
-        for filter_name, filter_config in filters.items():
-            self.addition_filter_default_values[filter_name].set(
-                filter_config["default_value"]
-            )
-            for rule in filter_config["rules"]:
-                for pattern in rule["patterns"]:
-                    self._add_addition_filter_rule(
-                        filter_name,
-                        ";".join(pattern),
-                        rule["value"],
-                    )
-        for rule in mapping["rules"]:
-            for pattern in rule["patterns"]:
-                self._add_work_location_rule(
-                    "; ".join(pattern),
-                    rule["value"],
-                )
-        for filter_name, rows in self.addition_filter_rows.items():
-            self.addition_filter_expanded[filter_name].set(
-                filter_name == "poste" and not rows
-            )
-            self._toggle_addition_filter_section(filter_name)
-        self.work_location_mapping_dirty = False
-        self.work_location_mapping_status.set("Configuration chargée.")
-
-    def _save_work_location_mapping(self):
-        """Valide et enregistre le mapping modifié depuis l’interface."""
-        rules = []
-        for index, row in enumerate(self.work_location_mapping_rows, start=1):
-            terms = [
-                term.strip()
-                for term in row["pattern"].get().split(";")
-            ]
-            value = row["value"].get().strip()
-            if not all(terms) or not value:
-                messagebox.showerror(
-                    "Règle incomplète",
-                    f"La règle {index} doit contenir des mots-clés et une valeur.",
-                    parent=self,
-                )
-                return
-            rules.append(
-                {
-                    "patterns": [terms],
-                    "value": value,
-                }
-            )
-        mapping = {
-            "description": (
-                "Les mots-clés d'une règle sont tous requis. "
-                "Les règles sont évaluées dans l'ordre."
-            ),
-            "default_value": self.work_location_default_value.get().strip(),
-            "rules": rules,
-        }
-        filters = {}
-        for filter_name, rows in self.addition_filter_rows.items():
-            default_value = self.addition_filter_default_values[
-                filter_name
-            ].get()
-            if default_value not in ("inclure", "exclure"):
-                messagebox.showerror(
-                    "Valeur de filtre invalide",
-                    f"Le filtre « {filter_name} » doit avoir une valeur par "
-                    "défaut inclure ou exclure.",
-                    parent=self,
-                )
-                return
-            filter_rules = []
-            for index, row in enumerate(rows, start=1):
-                terms = [
-                    term.strip()
-                    for term in row["pattern"].get().split(";")
-                ]
-                value = row["value"].get()
-                if not all(terms) or value not in ("inclure", "exclure"):
-                    messagebox.showerror(
-                        "Règle de filtre incomplète",
-                        f"La règle {index} du filtre « {filter_name} » doit "
-                        "contenir des termes et une valeur valide.",
-                        parent=self,
-                    )
-                    return
-                filter_rules.append(
-                    {
-                        "patterns": [terms],
-                        "value": value,
-                    }
-                )
-            filters[filter_name] = {
-                "default_value": default_value,
-                "rules": filter_rules,
-            }
-        try:
-            save_work_location_mapping(mapping, filters=filters)
-        except (OSError, UnicodeError, ValueError) as error:
-            self.work_location_mapping_status.set("Enregistrement impossible.")
-            messagebox.showerror(
-                "Configuration invalide",
-                str(error),
-                parent=self,
-            )
-            return
-        self.work_location_mapping_dirty = False
-        self.work_location_mapping_status.set("Configuration enregistrée.")
-
-    def _save_active_directory_config(self):
-        """Valide et enregistre les champs de configuration Active Directory."""
-        config = {
-            field: value.get()
-            for field, value in self.active_directory_config_vars.items()
-        }
-        config["scopes"] = [
-            scope.strip()
-            for scope in self.active_directory_scopes_editor.get(
-                "1.0", "end-1c"
-            ).splitlines()
-            if scope.strip()
-        ]
-        contents = json.dumps(config, indent=2, ensure_ascii=False) + "\n"
-        try:
-            save_active_directory_config(contents)
-        except (OSError, UnicodeError, ValueError) as error:
-            self.active_directory_config_status.set("Enregistrement impossible.")
-            messagebox.showerror(
-                "Configuration invalide",
-                str(error),
-                parent=self,
-            )
-            return
-        self.active_directory_config_dirty = False
-        self.active_directory_config_status.set("Configuration enregistrée.")
-
-    def _mark_active_directory_config_dirty(self, event):
-        """Signale que l’utilisateur a modifié un champ de configuration."""
-        if event.widget is not None:
-            self.active_directory_config_dirty = True
 
     def _create_run_button(self, parent, label, action):
         """Crée une rangée d’action avec l’accès aux résultats associés."""
@@ -1657,142 +748,6 @@ class CSEFileManager(TkinterDnD.Tk):
             output_writer.write(error)
             self.after(0, lambda message=error: self._finish_run("", message, 1))
 
-    def _schedule_device_code_dialog(self, verification_uri, user_code):
-        """Programme l’ouverture de la fenêtre de connexion sur le thread Tk."""
-        self.after(
-            0,
-            self._show_device_code_dialog,
-            verification_uri,
-            user_code,
-        )
-
-    def _start_active_directory_progress(self):
-        """Affiche une animation pendant l’authentification Microsoft."""
-        self.progress_count = 0
-        self.progress_frame.pack(fill="x", pady=(0, 10))
-        self.progress_bar.configure(mode="indeterminate", value=0)
-        self.progress_label.set("Connexion à Microsoft…")
-        self.progress_bar.start(12)
-
-    def _schedule_active_directory_progress(
-        self,
-        completed_count,
-        estimated_total,
-        phase,
-    ):
-        """Transmet une mise à jour de progression au thread graphique."""
-        self.after(
-            0,
-            self._update_active_directory_progress,
-            completed_count,
-            estimated_total,
-            phase,
-        )
-
-    def _update_active_directory_progress(
-        self,
-        completed_count,
-        estimated_total,
-        phase,
-    ):
-        """Actualise la barre et le pourcentage de collecte Active Directory."""
-        self.progress_count = completed_count
-        if self.progress_bar.cget("mode") == "indeterminate":
-            self.progress_bar.stop()
-        self.progress_bar.configure(
-            mode="determinate",
-            maximum=max(1, estimated_total),
-        )
-        if phase == "complete":
-            self.progress_bar.configure(value=max(1, estimated_total))
-            self.progress_label.set(
-                f"Collecte terminée : {completed_count} personne(s) exportée(s)."
-            )
-            return
-
-        percentage = min(
-            99,
-            int(completed_count * 100 / max(1, estimated_total)),
-        )
-        self.progress_bar.configure(
-            value=min(completed_count, estimated_total)
-        )
-        if phase == "connecting":
-            self.progress_bar.configure(mode="indeterminate", value=0)
-            self.progress_bar.start(12)
-            self.progress_label.set(
-                f"Connexion Microsoft… estimation : environ "
-                f"{estimated_total} personnes."
-            )
-        else:
-            self.progress_label.set(
-                f"{percentage} % — {completed_count} personne(s) "
-                f"sur environ {estimated_total}."
-            )
-
-    def _show_device_code_dialog(self, verification_uri, user_code):
-        """Affiche le code d’appareil et les actions pour se connecter."""
-        dialog = tk.Toplevel(self)
-        self.device_code_dialog = dialog
-        dialog.title("Connexion Microsoft requise")
-        dialog.transient(self)
-        dialog.resizable(False, False)
-
-        content = tk.Frame(dialog, padx=20, pady=16)
-        content.pack(fill="both", expand=True)
-        tk.Label(
-            content,
-            text="Copiez ce code, puis saisissez-le sur la page Microsoft :",
-            wraplength=380,
-            justify="left",
-        ).pack(anchor="w")
-        tk.Label(
-            content,
-            text=user_code,
-            font=("Segoe UI", 20, "bold"),
-            pady=10,
-        ).pack()
-        tk.Label(
-            content,
-            text=verification_uri,
-            fg="#1769aa",
-            wraplength=380,
-        ).pack(anchor="w", pady=(0, 12))
-
-        buttons = tk.Frame(content)
-        buttons.pack(fill="x")
-        copy_status = tk.StringVar(value="")
-
-        def copy_code():
-            """Copie le code de connexion dans le presse-papiers."""
-            dialog.clipboard_clear()
-            dialog.clipboard_append(user_code)
-            dialog.update()
-            copy_status.set("Code copié dans le presse-papiers.")
-
-        tk.Button(
-            buttons,
-            text="Copier le code",
-            command=copy_code,
-        ).pack(side="left")
-        tk.Button(
-            buttons,
-            text="Ouvrir la page de connexion",
-            command=lambda: self._open_device_code_page(verification_uri),
-        ).pack(side="right")
-        tk.Label(content, textvariable=copy_status, fg="#176b35").pack(
-            anchor="w", pady=(8, 0)
-        )
-
-    def _open_device_code_page(self, verification_uri):
-        """Ouvre la page Microsoft de connexion avec le code d’appareil."""
-        if not webbrowser.open(verification_uri):
-            messagebox.showerror(
-                "Ouverture impossible",
-                "Impossible d’ouvrir la page de connexion Microsoft.",
-                parent=self,
-            )
-
     def _finish_run(
         self,
         stdout,
@@ -1885,7 +840,6 @@ class CSEFileManager(TkinterDnD.Tk):
                 f"Le dossier de sortie n’existe pas encore : {output_directory}",
                 parent=self,
             )
-
 
 def main():
     """Lance la fenêtre principale et sa boucle événementielle Tkinter."""
