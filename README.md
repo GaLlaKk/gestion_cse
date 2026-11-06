@@ -222,3 +222,33 @@ Pour activer le workflow :
 
 Le workflow est volontairement déclenché uniquement par ce label de validation;
 aucune clé OpenAI n’est nécessaire.
+
+### Trier automatiquement les nouvelles issues
+
+Le profil `.github/agents/issue-triage.agent.md` définit les consignes du
+deuxième agent : il demande les précisions manquantes avec le label
+`needs-info`, ou clarifie une demande exploitable et lui ajoute `triaged`.
+Il ne modifie pas le code, ne ferme pas l’issue et n'ajoute jamais
+`copilot-ready`. L'issue reste donc ouverte ; ce sont ses labels qui indiquent
+son état de triage. Le label `open` est retiré s'il existe.
+
+Ce profil versionné ne déclenche pas à lui seul un agent lors de la création
+d'une issue. Pour automatiser le triage sur GitHub :
+
+1. Créez les labels `needs-info` et `triaged` dans le dépôt.
+2. Dans **Agents > Automations**, créez une automation **Shared** déclenchée à
+   la création d'une issue. Ajoutez le déclencheur de commentaire d'issue si
+   disponible afin de réévaluer une demande après la réponse de son auteur.
+3. Copiez le corps Markdown du profil ci-dessus, sans son en-tête YAML, dans
+   le prompt de l'automation. Limitez ses modifications à l'issue
+   déclencheuse, excluez les événements générés par Copilot et n'activez que
+   les outils nécessaires pour commenter, éditer la description et gérer les
+   labels. N'autorisez ni modification du code ni création de pull request.
+4. Testez l'automation sur une issue existante avant de l'activer. Pour trier
+   les issues déjà ouvertes, lancez-la manuellement sur chacune d'elles.
+
+Les Copilot Automations nécessitent que Copilot cloud agent soit activé et sont
+disponibles pour les dépôts privés ou internes. Le dépôt étant privé, il répond
+au critère de visibilité ; la disponibilité dépend aussi du forfait et des
+paramètres Copilot du compte ou de l'organisation. Une automation partagée peut
+consommer les crédits IA du propriétaire du dépôt.

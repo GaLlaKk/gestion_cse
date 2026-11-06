@@ -47,6 +47,11 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   `COPILOT_ASSIGNMENT_TOKEN`; le token utilisateur sert à l’API GraphQL
   d’assignation. La pull request proposée par l’agent doit être revue
   manuellement.
+- `.github/agents/issue-triage.agent.md` contient les consignes du profil de
+  triage : `needs-info` pour les issues à clarifier, `triaged` pour les demandes
+  exploitables, jamais `copilot-ready` automatiquement. Le déclenchement
+  automatique se configure séparément dans Copilot Automations sur GitHub;
+  limiter ses outils aux commentaires, à l'édition de l'issue et aux labels.
 - `run_cse_desktop_app.ps1` lance l’application avec l’interpréteur local
   `.venv/Scripts/python.exe`; `debug/debug_deploy.ps1` crée cet environnement
   et installe `requirements.txt`.
