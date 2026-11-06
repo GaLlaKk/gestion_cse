@@ -203,46 +203,13 @@ Sur macOS ou Linux :
 python -m unittest discover -s tests -v
 ```
 
-### Déléguer une issue à GitHub Copilot
-
-Le workflow `.github/workflows/copilot-issue-resolver.yml` ne lance pas Copilot
-à l’ouverture d’une issue. Après avoir vérifié et complété sa description,
-ajoutez-lui le label `copilot-ready` : le workflow assigne alors l’issue à
-Copilot coding agent, qui peut proposer une pull request. La revue et la
-validation de cette pull request restent manuelles.
-
-Pour activer le workflow :
-
-1. Activez Copilot coding agent pour le dépôt et créez le label
-   `copilot-ready`.
-2. Ajoutez le secret de dépôt `COPILOT_ASSIGNMENT_TOKEN` contenant un token
-   utilisateur pris en charge par l’API Copilot. Pour un fine-grained personal
-   access token, GitHub demande l’accès en lecture aux métadonnées et les accès
-   en lecture/écriture aux Actions, contenus, issues et pull requests.
-   L’assignation utilise l’API REST GitHub pour ajouter
-   `copilot-swe-agent[bot]` à l’issue avec la branche par défaut comme base.
-   Le token doit viser ce dépôt et appartenir à un utilisateur ayant un accès
-   en écriture; Copilot coding agent doit aussi être activé pour le dépôt.
-   Après toute modification des permissions du token, mettez à jour le secret
-   `COPILOT_ASSIGNMENT_TOKEN` avec le token correspondant.
-
-En cas d’erreur HTTP, le workflow affiche le code et le message renvoyé par
-GitHub, sans afficher le token. Une réponse `403` signifie que GitHub refuse
-l’autorisation de l’appel; vérifiez les permissions et la sélection du dépôt
-du token, l’accès en écriture de son propriétaire, ainsi que l’activation de
-Copilot coding agent.
-
-Le workflow est volontairement déclenché uniquement par ce label de validation;
-aucune clé OpenAI n’est nécessaire.
-
 ### Trier automatiquement les nouvelles issues
 
 Le profil `.github/agents/issue-triage.agent.md` définit les consignes du
 deuxième agent : il demande les précisions manquantes avec le label
 `needs-info`, ou clarifie une demande exploitable et lui ajoute `triaged`.
-Il ne modifie pas le code, ne ferme pas l’issue et n'ajoute jamais
-`copilot-ready`. L'issue reste donc ouverte ; ce sont ses labels qui indiquent
-son état de triage. Le label `open` est retiré s'il existe.
+Il ne modifie pas le code ni ne ferme l’issue ; ses labels indiquent son état de
+triage. Le label `open` est retiré s'il existe.
 
 Ce profil versionné ne déclenche pas à lui seul un agent lors de la création
 d'une issue. Pour automatiser le triage sur GitHub :
