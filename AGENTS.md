@@ -39,7 +39,7 @@ racine sont des points d’entrée conservés pour lancer les traitements.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
 - `.github/workflows/ci.yml` exécute les tests unitaires sur chaque pull
   request et chaque push sur `main` (réutilisable via `workflow_call`).
-- `.github/workflows/release.yml` se déclenche uniquement sur les tags `v*` :
+- `.github/workflows/cd.yml` se déclenche uniquement sur les tags `v*` :
   il vérifie que le tag pointe sur un commit de `main`, relance la CI,
   construit les exécutables Windows, macOS Intel (runner `macos-15-intel`) et
   Linux, puis publie les archives ZIP et `SHA256SUMS.txt` sur la release
