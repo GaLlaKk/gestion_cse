@@ -169,9 +169,15 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "::warning::La release $RELEASE_TAG est déjà publiée (immuable) : publication ignorée."
+              exit 0
+            fi
             gh release upload "$RELEASE_TAG" release-assets/*.zip --clobber
           else
             gh release create "$RELEASE_TAG" release-assets/*.zip \
+              --draft \
               --title "Gestion CSE $RELEASE_TAG" \
               --generate-notes
           fi
+          gh release edit "$RELEASE_TAG" --draft=false
