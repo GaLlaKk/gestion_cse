@@ -4,7 +4,9 @@ on:
   issues:
     types: [labeled]
 
-permissions: {}
+permissions:
+  issues: read
+  contents: read
 
 jobs:
   assign-copilot:
