@@ -90,10 +90,9 @@ fichier/traitement pour le flux Swile.
 - `services/swile_service.py`
   - `generate_work_location_values` produit un CSV Swile d’attribut
     (`Prénom`, `Nom de famille`, `E-mail`, `Matricule`, `Valeur`) ; les
-    informations d’identité viennent du CSV Swile et la valeur est déduite du
-    `Lieu de travail` dans l’export Active Directory.
-  - Toutes les lignes du CSV Swile sont conservées dans ce fichier (pas de
-    filtre de domaine ni d’exclusion `.ext`).
+    personnes incluses sont les Swile trouvées dans Active Directory et les
+    ajouts admissibles selon les filtres configurés; leur valeur est déduite
+    du `Lieu de travail` dans l’export Active Directory.
   - Le mapping de lieu est lu depuis `swile.config.json` à la racine du
     projet. Les règles sont
     évaluées dans l’ordre; les termes d’un motif sont tous requis et les motifs

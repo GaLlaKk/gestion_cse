@@ -512,10 +512,9 @@ class CSEFileManager(TkinterDnD.Tk):
         tk.Label(
             location_values_section,
             text=(
-                "Cette étape utilise le fichier ACTIVE DIRECTORY déposé dans "
-                "l'onglet « Comparer les listes » "
-                "et produit un CSV avec les colonnes Prénom, Nom de famille, "
-                "E-mail, Matricule et Valeur."
+                "Cette étape génère un CSV à partir des salariés Swile trouvés "
+                "dans Active Directory et des ajouts admissibles selon les "
+                "filtres configurés dans « Comparer les listes »."
             ),
             anchor="w",
             justify="left",

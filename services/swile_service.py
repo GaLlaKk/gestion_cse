@@ -518,26 +518,41 @@ def generate_work_location_values(
     swile_path,
     active_directory_path,
     output_path,
-    _report_domain,
+    report_domain,
     mapping_config_path=None,
+    filters_config_path=None,
 ):
-    """Crée le CSV des valeurs de lieu de travail pour chaque ligne Swile."""
+    """Crée les valeurs pour les Swile trouvés et les ajouts filtrés."""
     work_location_mapping = load_work_location_mapping(mapping_config_path)
     _, swile_users = read_csv(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
-    missing_work_location_column = False
     try:
         _, active_directory_users = read_csv(
-            active_directory_path, ",", {"Nom", "Email", "Lieu de travail"}
+            active_directory_path,
+            ",",
+            {"Nom", "Email", "Identifiant", "Poste", "Lieu de travail"},
         )
     except ValueError as error:
         if "Lieu de travail" not in str(error):
             raise
         missing_work_location_column = True
         _, active_directory_users = read_csv(
-            active_directory_path, ",", {"Nom", "Email"}
+            active_directory_path,
+            ",",
+            {"Nom", "Email", "Identifiant", "Poste"},
         )
+    else:
+        missing_work_location_column = False
+
+    found_users, _ = match_users(swile_users, active_directory_users)
+    additions = build_additions(
+        swile_users,
+        active_directory_users,
+        report_domain,
+        load_addition_filters(filters_config_path),
+    )[0]
+    source_users = found_users + additions
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     locations_by_email = {}
@@ -555,7 +570,7 @@ def generate_work_location_values(
             locations_by_name[name_key] = user
 
     generated_rows = []
-    for user in swile_users:
+    for user in source_users:
         email = (user.get("Email") or "").strip()
         first_name = (user.get("Prénom") or "").strip()
         last_name = (user.get("Nom") or "").strip()

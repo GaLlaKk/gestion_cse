@@ -973,14 +973,22 @@ class SwileServiceTests(unittest.TestCase):
         """Vérifie que la génération applique le fichier de mapping personnalisé."""
         active_directory_path = self._write_csv(
             "active-directory-custom-locations.csv",
-            ["Nom", "Email", "Identifiant", "Lieu de travail"],
+            ["Nom", "Email", "Identifiant", "Poste", "Lieu de travail"],
             [
                 {
                     "Nom": "Ana Doe",
                     "Email": "ana@epsilon-france.com",
                     "Identifiant": "a1",
+                    "Poste": "Analyste",
                     "Lieu de travail": "Bordeaux",
-                }
+                },
+                {
+                    "Nom": "Jean Nouveau",
+                    "Email": "jean@epsilon-france.com",
+                    "Identifiant": "J-2",
+                    "Poste": "Analyste",
+                    "Lieu de travail": "Bordeaux",
+                },
             ],
             ",",
         )
@@ -1013,7 +1021,7 @@ class SwileServiceTests(unittest.TestCase):
             rows = list(csv.DictReader(stream, delimiter=";"))
         self.assertEqual(
             [row["Valeur"] for row in rows],
-            ["Siège Bordeaux", "Autre site"],
+            ["Siège Bordeaux", "Siège Bordeaux"],
         )
 
     def test_work_location_mapping_rejects_invalid_configuration(self):
@@ -1286,42 +1294,48 @@ class SwileServiceTests(unittest.TestCase):
         )
         active_directory_path = self._write_csv(
             "active-directory-locations.csv",
-            ["Nom", "Email", "Identifiant", "Lieu de travail"],
+            ["Nom", "Email", "Identifiant", "Poste", "Lieu de travail"],
             [
                 {
                     "Nom": "Alice Martin",
                     "Email": "alice@epsilon-france.com",
                     "Identifiant": "martin_a",
+                    "Poste": "Analyste",
                     "Lieu de travail": "FR Paris 145-151 rue de Courcelles",
                 },
                 {
                     "Nom": "Bob Durand",
                     "Email": "bob@epsilon-france.com",
                     "Identifiant": "durand_b",
+                    "Poste": "Analyste",
                     "Lieu de travail": "29 Avenue De La Marne",
                 },
                 {
                     "Nom": "Chloe Petit",
                     "Email": "chloe@epsilon-france.com",
                     "Identifiant": "petit_c",
+                    "Poste": "Analyste",
                     "Lieu de travail": "FR Paris 133",
                 },
                 {
                     "Nom": "Denis Dupont",
                     "Email": "denis@epsilon-france.com",
                     "Identifiant": "dupont_d",
+                    "Poste": "Analyste",
                     "Lieu de travail": "Bordeaux",
                 },
                 {
                     "Nom": "Paul Externe",
                     "Email": "paul.ext@epsilon-france.com",
                     "Identifiant": "externe_p",
+                    "Poste": "Analyste",
                     "Lieu de travail": "FR Paris 145-151 rue de Courcelles",
                 },
                 {
                     "Nom": "NomUnique",
                     "Email": "invalid@epsilon-france.com",
                     "Identifiant": "invalid_i",
+                    "Poste": "Analyste",
                     "Lieu de travail": "FR Paris 145-151 rue de Courcelles",
                 },
             ],
@@ -1380,17 +1394,19 @@ class SwileServiceTests(unittest.TestCase):
         )
         active_directory_path = self._write_csv(
             "active-directory-no-location.csv",
-            ["Nom", "Email", "Identifiant"],
+            ["Nom", "Email", "Identifiant", "Poste"],
             [
                 {
                     "Nom": "Alice Martin",
                     "Email": "alice@epsilon-france.com",
                     "Identifiant": "martin_a",
+                    "Poste": "Analyste",
                 },
                 {
                     "Nom": "Bob Durand",
                     "Email": "bob@epsilon-france.com",
                     "Identifiant": "durand_b",
+                    "Poste": "Analyste",
                 },
             ],
             ",",
@@ -1406,6 +1422,7 @@ class SwileServiceTests(unittest.TestCase):
             active_directory_path,
             output_path,
             "epsilon-france.com",
+            filters_config_path=self.root / "missing-filters.json",
         )
 
         self.assertEqual(generated_count, 2)
@@ -1419,10 +1436,12 @@ class SwileServiceTests(unittest.TestCase):
             ["Martin-Swile", "Durand-Swile"],
         )
 
-    def test_generate_work_location_values_keeps_all_swile_rows(self):
-        """Vérifie que la génération conserve toutes les lignes Swile."""
+    def test_generate_work_location_values_uses_found_users_and_filtered_additions(
+        self,
+    ):
+        """Vérifie les Swile trouvés et les ajouts admissibles uniquement."""
         swile_path = self._write_csv(
-            "swile-all-kept.csv",
+            "swile-filtered-sources.csv",
             ["Prénom", "Nom", "Email", "Matricule"],
             [
                 {
@@ -1432,34 +1451,78 @@ class SwileServiceTests(unittest.TestCase):
                     "Matricule": "swile_a",
                 },
                 {
-                    "Prénom": "Bob",
-                    "Nom": "Durand",
-                    "Email": "bob@gmail.com",
-                    "Matricule": "swile_b",
-                },
-                {
-                    "Prénom": "",
-                    "Nom": "",
-                    "Email": "",
-                    "Matricule": "swile_c",
+                    "Prénom": "Non",
+                    "Nom": "Trouve",
+                    "Email": "not-found@epsilon-france.com",
+                    "Matricule": "swile_missing",
                 },
             ],
             ";",
         )
         active_directory_path = self._write_csv(
-            "active-directory-all-kept.csv",
-            ["Nom", "Email", "Identifiant", "Lieu de travail"],
+            "active-directory-filtered-sources.csv",
+            ["Nom", "Email", "Identifiant", "Poste", "Lieu de travail"],
             [
                 {
                     "Nom": "Alice Martin",
                     "Email": "alice@epsilon-france.com",
                     "Identifiant": "martin_a",
+                    "Poste": "Analyste",
                     "Lieu de travail": "FR Paris 145-151 rue de Courcelles",
-                }
+                },
+                {
+                    "Nom": "Ajoute Admissible",
+                    "Email": "added@epsilon-france.com",
+                    "Identifiant": "added_a",
+                    "Poste": "Analyste",
+                    "Lieu de travail": "29 Avenue De La Marne",
+                },
+                {
+                    "Nom": "Ajoute Externe",
+                    "Email": "external.ext@epsilon-france.com",
+                    "Identifiant": "external_a",
+                    "Poste": "Analyste",
+                    "Lieu de travail": "FR Paris 145-151 rue de Courcelles",
+                },
+                {
+                    "Nom": "Ajoute Direction",
+                    "Email": "director@epsilon-france.com",
+                    "Identifiant": "director_a",
+                    "Poste": "Directeur",
+                    "Lieu de travail": "FR Paris 133",
+                },
             ],
             ",",
         )
-        output_path = self.output_directory / "attribute-values-all-kept.csv"
+        output_path = self.output_directory / "attribute-values-filtered-sources.csv"
+        filters_config_path = self.root / "swile-filters.json"
+        filters_config_path.write_text(
+            json.dumps(
+                {
+                    "filters": {
+                        "email": {
+                            "default_value": "inclure",
+                            "rules": [
+                                {
+                                    "patterns": [[".ext@"]],
+                                    "value": "exclure",
+                                }
+                            ],
+                        },
+                        "poste": {
+                            "default_value": "inclure",
+                            "rules": [
+                                {
+                                    "patterns": [["directeur"]],
+                                    "value": "exclure",
+                                }
+                            ],
+                        },
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
 
         (
             _result_path,
@@ -1470,16 +1533,21 @@ class SwileServiceTests(unittest.TestCase):
             active_directory_path,
             output_path,
             "epsilon-france.com",
+            filters_config_path=filters_config_path,
         )
 
-        self.assertEqual(generated_count, 3)
+        self.assertEqual(generated_count, 2)
         self.assertFalse(missing_work_location_column)
         with output_path.open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.DictReader(stream, delimiter=";"))
-        self.assertEqual(len(rows), 3)
-        self.assertEqual(rows[0]["Valeur"], "Paris 145")
-        self.assertEqual(rows[1]["Valeur"], "Autre")
-        self.assertEqual(rows[2]["Valeur"], "Autre")
+        self.assertEqual(
+            [row["E-mail"] for row in rows],
+            ["alice@epsilon-france.com", "added@epsilon-france.com"],
+        )
+        self.assertEqual(
+            [row["Valeur"] for row in rows], ["Paris 145", "Lille 5.9"]
+        )
+        self.assertEqual([row["Matricule"] for row in rows], ["martin_a", "added_a"])
 
 
 if __name__ == "__main__":
