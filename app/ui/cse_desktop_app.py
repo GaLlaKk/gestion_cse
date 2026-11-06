@@ -23,6 +23,7 @@ from services.swile_service import (
     save_work_location_mapping,
 )
 from services.active_directory_export import (
+    apply_config_defaults,
     get_config_path,
     run_active_directory_export,
     save_active_directory_config,
@@ -616,6 +617,7 @@ class CSEFileManager(TkinterDnD.Tk):
                 raise ValueError(
                     "La configuration doit contenir un objet JSON."
                 )
+            config = apply_config_defaults(config)
             for field, _ in ACTIVE_DIRECTORY_CONFIG_FIELDS:
                 value = config.get(field, "")
                 self.active_directory_config_vars[field].set(

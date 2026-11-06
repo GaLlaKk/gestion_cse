@@ -136,12 +136,41 @@ def get_config_path():
     return project_root() / "liste_salarie_active_directory.config.json"
 
 
+DEFAULT_CONFIG = {
+    "start_user_email": "prenom.nom@exemple.fr",
+    "client_id": "1fec8e78-bce4-4aaf-ab1b-5451cc387264",
+    "authority": "https://login.microsoftonline.com/organizations",
+    "scopes": ["User.ReadBasic.All"],
+    "report_domain": "exemple.fr",
+}
+EXAMPLE_ONLY_SETTINGS = ("start_user_email", "report_domain")
+
+
+def apply_config_defaults(config):
+    """Complète les paramètres absents ou vides avec les valeurs par défaut."""
+    completed = dict(config)
+    for name, default in DEFAULT_CONFIG.items():
+        value = completed.get(name)
+        if value is None or value == "" or value == []:
+            completed[name] = list(default) if isinstance(default, list) else default
+        elif isinstance(value, str) and not value.strip():
+            completed[name] = default
+    return completed
+
+
 def validate_config(config, config_path):
     """Vérifie les champs obligatoires de la configuration Active Directory."""
     if not isinstance(config, dict):
         raise ValueError(
             f"La configuration doit être un objet JSON dans {config_path}."
         )
+    config = apply_config_defaults(config)
+    for setting_name in EXAMPLE_ONLY_SETTINGS:
+        if config[setting_name] == DEFAULT_CONFIG[setting_name]:
+            raise ValueError(
+                f"Le paramètre '{setting_name}' contient une valeur d’exemple "
+                f"à remplacer dans {config_path}."
+            )
 
     required_string_settings = (
         "start_user_email",
@@ -311,6 +340,8 @@ def run_active_directory_export(
     try:
         with config_path.open(encoding="utf-8") as config_file:
             config = json.load(config_file)
+        if isinstance(config, dict):
+            config = apply_config_defaults(config)
         scopes = validate_config(config, config_path)
     except Exception:
         logger.exception(

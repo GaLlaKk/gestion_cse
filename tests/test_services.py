@@ -79,9 +79,23 @@ class ActiveDirectoryConfigTests(unittest.TestCase):
             "report_domain": "example.com",
             "scopes": ["scope"],
         }
-        del config["client_id"]
+        del config["start_user_email"]
 
-        with self.assertRaisesRegex(ValueError, "client_id"):
+        with self.assertRaisesRegex(ValueError, "start_user_email"):
+            active_directory_export.validate_config(config, "config.json")
+
+    def test_config_defaults_fill_missing_values(self):
+        """Vérifie les valeurs par défaut et le rejet des exemples."""
+        config = active_directory_export.apply_config_defaults(
+            {"report_domain": "", "authority": " "}
+        )
+
+        self.assertEqual(
+            config["authority"],
+            "https://login.microsoftonline.com/organizations",
+        )
+        self.assertEqual(config["scopes"], ["User.ReadBasic.All"])
+        with self.assertRaisesRegex(ValueError, "exemple"):
             active_directory_export.validate_config(config, "config.json")
 
 
