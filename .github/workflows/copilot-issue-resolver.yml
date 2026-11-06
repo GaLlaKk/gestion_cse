@@ -67,7 +67,7 @@ jobs:
           mutation='mutation($issueId: ID!, $actorId: ID!, $repositoryId: ID!, $baseRef: String!) {
             addAssigneesToAssignable(input: {
               assignableId: $issueId
-              actorIds: [$actorId]
+              assigneeIds: [$actorId]
               agentAssignment: {
                 targetRepositoryId: $repositoryId
                 baseRef: $baseRef
