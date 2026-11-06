@@ -202,3 +202,23 @@ Sur macOS ou Linux :
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+### Déléguer une issue à GitHub Copilot
+
+Le workflow `.github/workflows/copilot-issue-resolver.yml` ne lance pas Copilot
+à l’ouverture d’une issue. Après avoir vérifié et complété sa description,
+ajoutez-lui le label `copilot-ready` : le workflow assigne alors l’issue à
+Copilot coding agent, qui peut proposer une pull request. La revue et la
+validation de cette pull request restent manuelles.
+
+Pour activer le workflow :
+
+1. Activez Copilot coding agent pour le dépôt et créez le label
+   `copilot-ready`.
+2. Ajoutez le secret de dépôt `COPILOT_ASSIGNMENT_TOKEN` contenant un token
+   utilisateur pris en charge par l’API Copilot. Pour un fine-grained personal
+   access token, GitHub demande l’accès en lecture aux métadonnées et les accès
+   en lecture/écriture aux Actions, contenus, issues et pull requests.
+
+Le workflow est volontairement déclenché uniquement par ce label de validation;
+aucune clé OpenAI n’est nécessaire.

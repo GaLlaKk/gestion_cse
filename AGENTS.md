@@ -41,6 +41,12 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   `v*`. Les artefacts incluent le modèle Swile, mais pas la configuration
   Active Directory. Une exécution manuelle depuis une branche permet aussi de
   valider tests et builds sans publier de release.
+- `.github/workflows/copilot-issue-resolver.yml` assigne les issues à Copilot
+  coding agent uniquement après l’ajout manuel du label `copilot-ready`.
+  L’activation nécessite Copilot coding agent et le secret
+  `COPILOT_ASSIGNMENT_TOKEN`; le token utilisateur sert à l’API GraphQL
+  d’assignation. La pull request proposée par l’agent doit être revue
+  manuellement.
 - `run_cse_desktop_app.ps1` lance l’application avec l’interpréteur local
   `.venv/Scripts/python.exe`; `debug/debug_deploy.ps1` crée cet environnement
   et installe `requirements.txt`.

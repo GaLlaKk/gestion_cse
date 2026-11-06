@@ -1,0 +1,98 @@
+name: Start Copilot for approved issues
+
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  assign-copilot:
+    if: github.event.label.name == 'copilot-ready'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign issue to Copilot
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_ASSIGNMENT_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::Configure the COPILOT_ASSIGNMENT_TOKEN repository secret."
+            exit 1
+          fi
+
+          owner="${GH_REPO%%/*}"
+          name="${GH_REPO#*/}"
+          lookup=$(gh api graphql \
+            -F query='query($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                id
+                defaultBranchRef { name }
+                issue(number: $number) {
+                  id
+                  assignees(first: 100) { nodes { login } }
+                }
+                suggestedActors(capabilities: [CAN_BE_ASSIGNED], first: 100) {
+                  nodes {
+                    ... on Bot { id login }
+                  }
+                }
+              }
+            }' \
+            -F owner="$owner" \
+            -F name="$name" \
+            -F number="$ISSUE_NUMBER")
+
+          if jq -e \
+            '.data.repository.issue.assignees.nodes | any(.login == "copilot-swe-agent")' \
+            <<< "$lookup" >/dev/null; then
+            echo "Copilot is already assigned to issue #$ISSUE_NUMBER."
+            exit 0
+          fi
+
+          repository_id=$(jq -er '.data.repository.id' <<< "$lookup")
+          issue_id=$(jq -er '.data.repository.issue.id' <<< "$lookup")
+          base_ref=$(jq -er '.data.repository.defaultBranchRef.name' <<< "$lookup")
+          copilot_id=$(jq -er \
+            '.data.repository.suggestedActors.nodes[]
+              | select(.login == "copilot-swe-agent")
+              | .id' <<< "$lookup")
+
+          mutation='mutation($issueId: ID!, $actorId: ID!, $repositoryId: ID!, $baseRef: String!) {
+            addAssigneesToAssignable(input: {
+              assignableId: $issueId
+              actorIds: [$actorId]
+              agentAssignment: {
+                targetRepositoryId: $repositoryId
+                baseRef: $baseRef
+              }
+            }) {
+              assignable {
+                ... on Issue {
+                  assignees(first: 100) { nodes { login } }
+                }
+              }
+            }
+          }'
+
+          result=$(gh api graphql \
+            -F query="$mutation" \
+            -F issueId="$issue_id" \
+            -F actorId="$copilot_id" \
+            -F repositoryId="$repository_id" \
+            -F baseRef="$base_ref" \
+            -H 'GraphQL-Features: issues_copilot_assignment_api_support,coding_agent_model_selection')
+
+          if ! jq -e \
+            '.data.addAssigneesToAssignable.assignable.assignees.nodes
+              | any(.login == "copilot-swe-agent")' \
+            <<< "$result" >/dev/null; then
+            echo "::error::Copilot was not assigned to issue #$ISSUE_NUMBER."
+            exit 1
+          fi
+
+          echo "Assigned Copilot to issue #$ISSUE_NUMBER."
