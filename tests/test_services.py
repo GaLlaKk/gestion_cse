@@ -1420,7 +1420,7 @@ class SwileServiceTests(unittest.TestCase):
 
         self.assertEqual(result[0], 1)
         self.assertEqual(result[2], 0)
-        self.assertTrue(result[1].exists())
+        self.assertFalse(result[1].exists())
         with output_path.open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.DictReader(stream, delimiter=";"))
         self.assertEqual(rows[0]["Matricule"], "J-2")
