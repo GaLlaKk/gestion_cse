@@ -149,8 +149,9 @@ fichier/traitement pour le flux Swile.
   diagnostic des entrées individuelles.
 - L’export Active Directory écrit chaque ligne au fur et à mesure dans un CSV
   temporaire, puis le publie sous son nom final uniquement si la collecte
-  réussit; cela évite de conserver tout l’export en mémoire et de présenter un
-  fichier partiel comme valide.
+  réussit et si au moins une personne est exportée; cela évite de conserver
+  tout l’export en mémoire et de présenter un fichier partiel ou vide comme
+  valide. Les traitements Swile ne créent pas les CSV de résultat sans ligne.
 - `requirements.txt` liste les dépendances Python, dont `requests`, `msal` et
   `tkinterdnd2`.
 
