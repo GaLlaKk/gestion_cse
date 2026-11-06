@@ -24,7 +24,7 @@ définir le résultat attendu :
   nécessaires pour la rendre exploitable ;
 - applique le label `needs-info` et retire `triaged` et le label `open` s'il
   existe ;
-- ne ferme pas l'issue et ne lui ajoute jamais `copilot-ready`.
+- ne ferme pas l'issue.
 
 Si l'issue est suffisamment claire pour être prise en charge :
 
@@ -34,8 +34,7 @@ Si l'issue est suffisamment claire pour être prise en charge :
   d'acceptation utiles ; distingue les hypothèses des faits ;
 - applique le label `triaged` et retire `needs-info` et le label `open` s'il
   existe ;
-- ne ferme pas l'issue et ne lui ajoute jamais `copilot-ready` : cette décision
-  reste réservée à une personne après vérification.
+- ne ferme pas l'issue.
 
 Avant de commenter, lis les commentaires existants. Ne répète pas des questions
 qui ont déjà reçu une réponse ; réévalue l'issue lorsque de nouvelles

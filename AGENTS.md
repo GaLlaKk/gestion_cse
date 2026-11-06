@@ -44,19 +44,11 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   une branche lance donc les tests sans construire d’exécutables ni publier
   de release. Les artefacts incluent le modèle Swile, mais pas la configuration
   Active Directory.
-- `.github/workflows/copilot-issue-resolver.yml` assigne les issues à Copilot
-  coding agent uniquement après l’ajout manuel du label `copilot-ready`.
-  L’activation nécessite Copilot coding agent et le secret
-  `COPILOT_ASSIGNMENT_TOKEN`; le token utilisateur sert à l’API REST
-  d’assignation de GitHub. Le propriétaire du token doit avoir un accès en
-  écriture au dépôt. En cas d’erreur HTTP, le workflow journalise le code et le
-  message d’erreur API, sans exposer le token. La pull request proposée par
-  l’agent doit être revue manuellement.
 - `.github/agents/issue-triage.agent.md` contient les consignes du profil de
   triage : `needs-info` pour les issues à clarifier, `triaged` pour les demandes
-  exploitables, jamais `copilot-ready` automatiquement. Le déclenchement
-  automatique se configure séparément dans Copilot Automations sur GitHub;
-  limiter ses outils aux commentaires, à l'édition de l'issue et aux labels.
+  exploitables. Le déclenchement automatique se configure séparément dans
+  Copilot Automations sur GitHub; limiter ses outils aux commentaires, à
+  l'édition de l'issue et aux labels.
 - `run_cse_desktop_app.ps1` lance l’application avec l’interpréteur local
   `.venv/Scripts/python.exe`; `debug/debug_deploy.ps1` crée cet environnement
   et installe `requirements.txt`.
