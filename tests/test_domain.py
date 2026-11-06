@@ -143,6 +143,57 @@ class AdditionsTests(unittest.TestCase):
         self.assertEqual(excluded_invalid, 1)
         self.assertEqual(excluded_external, 1)
 
+    def test_build_additions_uses_configured_filters(self):
+        """Vérifie que les règles d’exclusion sont configurables."""
+        active_directory = [
+            {
+                "Nom": "Alice Externe",
+                "Email": "alice.ext@epsilon-france.com",
+                "Identifiant": "a1",
+                "Poste": "Analyste",
+            },
+            {
+                "Nom": "Bob Direction",
+                "Email": "bob@epsilon-france.com",
+                "Identifiant": "b2",
+                "Poste": "Team Lead",
+            },
+        ]
+
+        additions, ignored, excluded_management, _, _, excluded_external = (
+            build_additions(
+                [],
+                active_directory,
+                "epsilon-france.com",
+                {
+                    "email": {
+                        "default_value": "inclure",
+                        "rules": [],
+                    },
+                    "poste": {
+                        "default_value": "inclure",
+                        "rules": [
+                            {
+                                "patterns": [["lead"]],
+                                "value": "exclure",
+                            }
+                        ],
+                    },
+                },
+            )
+        )
+
+        self.assertEqual(
+            [row["Email"] for row in additions],
+            ["alice.ext@epsilon-france.com"],
+        )
+        self.assertEqual(
+            [row["Email"] for row in ignored],
+            ["bob@epsilon-france.com"],
+        )
+        self.assertEqual(excluded_management, 1)
+        self.assertEqual(excluded_external, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

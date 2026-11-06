@@ -16,8 +16,9 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 from services.csv_files import latest_valid_csv_in_directories, read_csv
 from services.paths import bundled_resource, project_root
 from services.swile_service import (
-    WORK_LOCATION_CONFIG_PATH,
+    SWILE_CONFIG_PATH,
     execute_swile_action,
+    load_addition_filters,
     load_work_location_mapping,
     save_work_location_mapping,
 )
@@ -574,7 +575,7 @@ class CSEFileManager(TkinterDnD.Tk):
         """Construit l’éditeur graphique du mapping des lieux de travail."""
         section = tk.LabelFrame(
             parent,
-            text="Configurer le mapping des lieux",
+            text="Configurer les lieux et filtres Swile",
             padx=10,
             pady=8,
         )
@@ -582,10 +583,11 @@ class CSEFileManager(TkinterDnD.Tk):
         tk.Label(
             section,
             text=(
-                f"Fichier : {WORK_LOCATION_CONFIG_PATH}\n"
-                "Les règles sont évaluées de haut en bas. Séparez les "
-                "mots-clés par des points-virgules; tous doivent apparaître "
-                "dans le lieu Active Directory."
+                f"Fichier : {SWILE_CONFIG_PATH}\n"
+                "Pour les lieux, les règles sont évaluées de haut en bas et "
+                "tous les mots-clés d’un motif doivent apparaître. Pour les "
+                "filtres, la première règle correspondante décide d’inclure "
+                "ou d’exclure; tous les termes d’un motif sont requis."
             ),
             anchor="w",
             justify="left",
@@ -611,6 +613,73 @@ class CSEFileManager(TkinterDnD.Tk):
             "<<Paste>>", self._mark_work_location_mapping_dirty
         )
 
+        self.addition_filter_rows = {}
+        self.addition_filter_default_values = {}
+        self.addition_filter_default_entries = {}
+        self.addition_filter_rules_frames = {}
+        self.addition_filter_add_buttons = {}
+        self.work_location_mapping_controls = [
+            self.work_location_default_entry,
+        ]
+        for filter_name, filter_title in (
+            ("email", "Filtrage des adresses e-mail"),
+            ("poste", "Filtrage des postes"),
+        ):
+            filter_section = tk.LabelFrame(
+                section,
+                text=filter_title,
+                padx=8,
+                pady=5,
+            )
+            filter_section.pack(fill="x", pady=(0, 6))
+            default_frame = tk.Frame(filter_section)
+            default_frame.pack(fill="x", pady=(0, 4))
+            tk.Label(
+                default_frame,
+                text="Valeur par défaut :",
+                anchor="w",
+            ).pack(side="left")
+            default_value = tk.StringVar(value="inclure")
+            default_entry = ttk.Combobox(
+                default_frame,
+                textvariable=default_value,
+                values=("inclure", "exclure"),
+                state="readonly",
+                width=12,
+            )
+            default_entry.pack(side="left", padx=(6, 0))
+            default_entry.bind(
+                "<<ComboboxSelected>>", self._mark_work_location_mapping_dirty
+            )
+            self.addition_filter_default_values[filter_name] = default_value
+            self.addition_filter_default_entries[filter_name] = default_entry
+            self.work_location_mapping_controls.append(default_entry)
+            header = tk.Frame(filter_section)
+            header.pack(fill="x")
+            header.columnconfigure(0, weight=3)
+            header.columnconfigure(1, weight=1)
+            tk.Label(header, text="Motifs (termes séparés par ;)").grid(
+                row=0, column=0, sticky="w", padx=(0, 6)
+            )
+            tk.Label(header, text="Valeur").grid(row=0, column=1, sticky="w")
+            rules_frame = tk.Frame(filter_section)
+            rules_frame.columnconfigure(0, weight=1)
+            rules_frame.pack(fill="x")
+            self.addition_filter_rows[filter_name] = []
+            self.addition_filter_rules_frames[filter_name] = rules_frame
+            add_button = tk.Button(
+                filter_section,
+                text="＋ Ajouter une règle",
+                command=lambda selected=filter_name: (
+                    self._add_addition_filter_rule(
+                        selected, mark_dirty=True
+                    )
+                ),
+            )
+            add_button.pack(anchor="w", pady=(4, 0))
+            self.addition_filter_add_buttons[filter_name] = add_button
+            self.work_location_mapping_controls.append(add_button)
+
         header = tk.Frame(section)
         header.pack(fill="x")
         header.columnconfigure(0, weight=3)
@@ -625,7 +694,6 @@ class CSEFileManager(TkinterDnD.Tk):
         self.work_location_rules_frame.columnconfigure(0, weight=1)
         self.work_location_rules_frame.pack(fill="x")
         self.work_location_mapping_rows = []
-        self.work_location_mapping_controls = [self.work_location_default_entry]
         self.work_location_mapping_dirty = False
 
         actions = tk.Frame(section)
@@ -638,7 +706,7 @@ class CSEFileManager(TkinterDnD.Tk):
         self.work_location_add_button.pack(side="left")
         self.work_location_save_button = tk.Button(
             actions,
-            text="Enregistrer le mapping",
+            text="Enregistrer la configuration",
             command=self._save_work_location_mapping,
         )
         self.work_location_save_button.pack(side="left", padx=(6, 0))
@@ -740,6 +808,120 @@ class CSEFileManager(TkinterDnD.Tk):
                 state="disabled" if index == last_index else "normal"
             )
 
+    def _add_addition_filter_rule(
+        self, filter_name, pattern="", value="exclure", mark_dirty=False
+    ):
+        """Ajoute un motif et son action à l’un des filtres d’ajouts."""
+        row_frame = tk.Frame(self.addition_filter_rules_frames[filter_name])
+        row_frame.columnconfigure(0, weight=3)
+        row_frame.columnconfigure(1, weight=1)
+        pattern_var = tk.StringVar(value=pattern)
+        value_var = tk.StringVar(value=value)
+        pattern_entry = tk.Entry(row_frame, textvariable=pattern_var)
+        pattern_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        pattern_entry.bind(
+            "<KeyRelease>", self._mark_work_location_mapping_dirty
+        )
+        pattern_entry.bind(
+            "<<Paste>>", self._mark_work_location_mapping_dirty
+        )
+        value_entry = ttk.Combobox(
+            row_frame,
+            textvariable=value_var,
+            values=("inclure", "exclure"),
+            state="readonly",
+            width=12,
+        )
+        value_entry.grid(row=0, column=1, sticky="w", padx=(0, 6))
+        value_entry.bind(
+            "<<ComboboxSelected>>", self._mark_work_location_mapping_dirty
+        )
+        move_up_button = tk.Button(
+            row_frame,
+            text="↑",
+            width=2,
+            command=lambda selected=row_frame: self._move_addition_filter_rule(
+                filter_name, selected, -1
+            ),
+        )
+        move_up_button.grid(row=0, column=2, padx=(0, 2))
+        move_down_button = tk.Button(
+            row_frame,
+            text="↓",
+            width=2,
+            command=lambda selected=row_frame: self._move_addition_filter_rule(
+                filter_name, selected, 1
+            ),
+        )
+        move_down_button.grid(row=0, column=3, padx=(0, 2))
+        remove_button = tk.Button(
+            row_frame,
+            text="×",
+            width=2,
+            command=lambda selected=row_frame: self._remove_addition_filter_rule(
+                filter_name, selected
+            ),
+        )
+        remove_button.grid(row=0, column=4)
+        row = {
+            "frame": row_frame,
+            "pattern": pattern_var,
+            "value": value_var,
+            "controls": (
+                pattern_entry,
+                value_entry,
+                move_up_button,
+                move_down_button,
+                remove_button,
+            ),
+            "move_up": move_up_button,
+            "move_down": move_down_button,
+        }
+        self.addition_filter_rows[filter_name].append(row)
+        self.work_location_mapping_controls.extend(row["controls"])
+        self._refresh_addition_filter_rule_rows(filter_name)
+        if mark_dirty:
+            self.work_location_mapping_dirty = True
+
+    def _refresh_addition_filter_rule_rows(self, filter_name):
+        rows = self.addition_filter_rows[filter_name]
+        last_index = len(rows) - 1
+        for index, row in enumerate(rows):
+            row["frame"].grid(row=index, column=0, sticky="ew", pady=2)
+            row["move_up"].configure(state="disabled" if index == 0 else "normal")
+            row["move_down"].configure(
+                state="disabled" if index == last_index else "normal"
+            )
+
+    def _move_addition_filter_rule(self, filter_name, row_frame, offset):
+        rows = self.addition_filter_rows[filter_name]
+        current_index = next(
+            index
+            for index, row in enumerate(rows)
+            if row["frame"] is row_frame
+        )
+        target_index = current_index + offset
+        if not 0 <= target_index < len(rows):
+            return
+        row = rows.pop(current_index)
+        rows.insert(target_index, row)
+        self._refresh_addition_filter_rule_rows(filter_name)
+        self.work_location_mapping_dirty = True
+
+    def _remove_addition_filter_rule(self, filter_name, row_frame):
+        rows = self.addition_filter_rows[filter_name]
+        row_index = next(
+            index
+            for index, row in enumerate(rows)
+            if row["frame"] is row_frame
+        )
+        row = rows.pop(row_index)
+        for control in row["controls"]:
+            self.work_location_mapping_controls.remove(control)
+        row_frame.destroy()
+        self._refresh_addition_filter_rule_rows(filter_name)
+        self.work_location_mapping_dirty = True
+
     def _move_work_location_rule(self, row_frame, offset):
         """Déplace une règle d’un rang et met à jour son ordre de priorité."""
         current_index = next(
@@ -784,6 +966,7 @@ class CSEFileManager(TkinterDnD.Tk):
             return
         try:
             mapping = load_work_location_mapping()
+            filters = load_addition_filters()
         except (OSError, UnicodeError, ValueError) as error:
             self.work_location_mapping_status.set("Chargement impossible.")
             messagebox.showerror(
@@ -796,13 +979,30 @@ class CSEFileManager(TkinterDnD.Tk):
         for row in self.work_location_mapping_rows:
             row["frame"].destroy()
         self.work_location_mapping_rows.clear()
+        for filter_name, rows in self.addition_filter_rows.items():
+            for row in rows:
+                row["frame"].destroy()
+            rows.clear()
         self.work_location_mapping_controls = [
             self.work_location_default_entry,
+            *self.addition_filter_default_entries.values(),
+            *self.addition_filter_add_buttons.values(),
             self.work_location_add_button,
             self.work_location_save_button,
             self.work_location_reload_button,
         ]
         self.work_location_default_value.set(mapping["default_value"])
+        for filter_name, filter_config in filters.items():
+            self.addition_filter_default_values[filter_name].set(
+                filter_config["default_value"]
+            )
+            for rule in filter_config["rules"]:
+                for pattern in rule["patterns"]:
+                    self._add_addition_filter_rule(
+                        filter_name,
+                        "; ".join(pattern),
+                        rule["value"],
+                    )
         for rule in mapping["rules"]:
             for pattern in rule["patterns"]:
                 self._add_work_location_rule(
@@ -810,7 +1010,7 @@ class CSEFileManager(TkinterDnD.Tk):
                     rule["value"],
                 )
         self.work_location_mapping_dirty = False
-        self.work_location_mapping_status.set("Mapping chargé.")
+        self.work_location_mapping_status.set("Configuration chargée.")
 
     def _save_work_location_mapping(self):
         """Valide et enregistre le mapping modifié depuis l’interface."""
@@ -842,18 +1042,56 @@ class CSEFileManager(TkinterDnD.Tk):
             "default_value": self.work_location_default_value.get().strip(),
             "rules": rules,
         }
+        filters = {}
+        for filter_name, rows in self.addition_filter_rows.items():
+            default_value = self.addition_filter_default_values[
+                filter_name
+            ].get()
+            if default_value not in ("inclure", "exclure"):
+                messagebox.showerror(
+                    "Valeur de filtre invalide",
+                    f"Le filtre « {filter_name} » doit avoir une valeur par "
+                    "défaut inclure ou exclure.",
+                    parent=self,
+                )
+                return
+            filter_rules = []
+            for index, row in enumerate(rows, start=1):
+                terms = [
+                    term.strip()
+                    for term in row["pattern"].get().split(";")
+                ]
+                value = row["value"].get()
+                if not all(terms) or value not in ("inclure", "exclure"):
+                    messagebox.showerror(
+                        "Règle de filtre incomplète",
+                        f"La règle {index} du filtre « {filter_name} » doit "
+                        "contenir des termes et une valeur valide.",
+                        parent=self,
+                    )
+                    return
+                filter_rules.append(
+                    {
+                        "patterns": [terms],
+                        "value": value,
+                    }
+                )
+            filters[filter_name] = {
+                "default_value": default_value,
+                "rules": filter_rules,
+            }
         try:
-            save_work_location_mapping(mapping)
+            save_work_location_mapping(mapping, filters=filters)
         except (OSError, UnicodeError, ValueError) as error:
             self.work_location_mapping_status.set("Enregistrement impossible.")
             messagebox.showerror(
-                "Mapping invalide",
+                "Configuration invalide",
                 str(error),
                 parent=self,
             )
             return
         self.work_location_mapping_dirty = False
-        self.work_location_mapping_status.set("Mapping enregistré.")
+        self.work_location_mapping_status.set("Configuration enregistrée.")
 
     def _save_active_directory_config(self):
         """Valide et enregistre les champs de configuration Active Directory."""

@@ -18,6 +18,7 @@ from services.swile_service import (
     compare_users,
     generate_additions,
     generate_work_location_values,
+    load_addition_filters,
     load_work_location_mapping,
     map_work_location_value,
     save_work_location_mapping,
@@ -942,7 +943,7 @@ class SwileServiceTests(unittest.TestCase):
 
     def test_work_location_mapping_loads_custom_rules(self):
         """Vérifie le chargement des règles personnalisées et leur normalisation."""
-        config_path = self.root / "lieux_travail.config.json"
+        config_path = self.root / "swile.config.json"
         config_path.write_text(
             json.dumps(
                 {
@@ -983,7 +984,7 @@ class SwileServiceTests(unittest.TestCase):
             ],
             ",",
         )
-        config_path = self.root / "lieux_travail.config.json"
+        config_path = self.root / "swile.config.json"
         config_path.write_text(
             json.dumps(
                 {
@@ -1017,7 +1018,7 @@ class SwileServiceTests(unittest.TestCase):
 
     def test_work_location_mapping_rejects_invalid_configuration(self):
         """Vérifie qu’une configuration présente mais invalide est signalée."""
-        config_path = self.root / "lieux_travail.config.json"
+        config_path = self.root / "swile.config.json"
         config_path.write_text('{"default_value": "Autre", "rules": [{}]}')
 
         with self.assertRaisesRegex(ValueError, "règle 1"):
@@ -1025,7 +1026,7 @@ class SwileServiceTests(unittest.TestCase):
 
     def test_work_location_mapping_is_saved_and_reloaded(self):
         """Vérifie l’enregistrement atomique et le rechargement du mapping."""
-        config_path = self.root / "lieux_travail.config.json"
+        config_path = self.root / "swile.config.json"
         mapping = {
             "default_value": "Autre site",
             "rules": [
@@ -1043,9 +1044,162 @@ class SwileServiceTests(unittest.TestCase):
         self.assertEqual(load_work_location_mapping(config_path), mapping)
         self.assertEqual(list(self.root.glob("*.tmp")), [])
 
+    def test_addition_filters_default_to_current_behavior_without_config(self):
+        """Vérifie que l’absence de filtres conserve le paramétrage historique."""
+        filters = load_addition_filters(
+            self.root / "configuration-absente.json"
+        )
+
+        self.assertEqual(
+            filters["email"]["rules"][0]["patterns"],
+            [[".ext@"]],
+        )
+        self.assertEqual(filters["email"]["rules"][0]["value"], "exclure")
+        self.assertIn(
+            ["directrice"],
+            filters["poste"]["rules"][0]["patterns"],
+        )
+
+    def test_addition_filters_share_configuration_with_work_locations(self):
+        """Vérifie que la sauvegarde du mapping conserve les filtres définis."""
+        config_path = self.root / "swile.config.json"
+        mapping = {
+            "default_value": "Autre site",
+            "rules": [],
+        }
+        filters = {
+            "email": {
+                "default_value": "inclure",
+                "rules": [
+                    {"patterns": [[".externe"]], "value": "exclure"}
+                ],
+            },
+            "poste": {
+                "default_value": "inclure",
+                "rules": [
+                    {"patterns": [["responsable"]], "value": "exclure"}
+                ],
+            },
+        }
+
+        save_work_location_mapping(mapping, config_path, filters)
+
+        self.assertEqual(load_work_location_mapping(config_path), mapping)
+        self.assertEqual(load_addition_filters(config_path), filters)
+        saved_config = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved_config["filters"], filters)
+
+    def test_swile_configuration_reads_legacy_location_filename(self):
+        """Vérifie la lecture de l’ancien nom avant une sauvegarde migrée."""
+        legacy_path = self.root / "lieux_travail.config.json"
+        legacy_path.write_text(
+            json.dumps(
+                {
+                    "default_value": "Autre",
+                    "rules": [],
+                    "filters": {
+                        "email": {
+                            "default_value": "exclure",
+                            "rules": [],
+                        },
+                        "poste": {
+                            "default_value": "inclure",
+                            "rules": [],
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        with (
+            patch(
+                "services.swile_service.SWILE_CONFIG_PATH",
+                self.root / "swile.config.json",
+            ),
+            patch(
+                "services.swile_service.LEGACY_SWILE_CONFIG_PATH",
+                legacy_path,
+            ),
+        ):
+            filters = load_addition_filters()
+            mapping = load_work_location_mapping()
+
+        self.assertEqual(filters["email"]["default_value"], "exclure")
+        self.assertEqual(mapping, {"default_value": "Autre", "rules": []})
+
+    def test_generate_additions_applies_filters_from_shared_configuration(self):
+        """Vérifie que la génération des ajouts lit les filtres du JSON."""
+        template_path = self._write_csv(
+            "template-filters.csv",
+            ["Prénom", "Nom", "Email", "Matricule"],
+            [],
+            ";",
+        )
+        active_directory_path = self._write_csv(
+            "active-directory-filters.csv",
+            ["Nom", "Email", "Identifiant", "Poste"],
+            [
+                {
+                    "Nom": "Alice Externe",
+                    "Email": "alice.ext@epsilon-france.com",
+                    "Identifiant": "filter_a99",
+                    "Poste": "Analyste",
+                },
+                {
+                    "Nom": "Bob Lead",
+                    "Email": "bob@epsilon-france.com",
+                    "Identifiant": "filter_b99",
+                    "Poste": "Team Lead",
+                },
+            ],
+            ",",
+        )
+        config_path = self.root / "swile.config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "default_value": "Autre",
+                    "rules": [],
+                    "filters": {
+                        "email": {
+                            "default_value": "inclure",
+                            "rules": [],
+                        },
+                        "poste": {
+                            "default_value": "inclure",
+                            "rules": [
+                                {
+                                    "patterns": [["lead"]],
+                                    "value": "exclure",
+                                }
+                            ],
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        output_path = self.output_directory / "custom-additions.csv"
+
+        result = generate_additions(
+            self.swile_path,
+            active_directory_path,
+            template_path,
+            output_path,
+            "epsilon-france.com",
+            filters_config_path=config_path,
+        )
+
+        self.assertEqual(result[0], 1)
+        self.assertEqual(result[2], 1)
+        self.assertEqual(result[6], 0)
+        with output_path.open(encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream, delimiter=";"))
+        self.assertEqual(rows[0]["Email"], "alice.ext@epsilon-france.com")
+
     def test_invalid_work_location_mapping_does_not_replace_file(self):
         """Vérifie qu’un mapping invalide ne modifie pas le fichier enregistré."""
-        config_path = self.root / "lieux_travail.config.json"
+        config_path = self.root / "swile.config.json"
         config_path.write_text('{"default_value": "Avant"}', encoding="utf-8")
 
         with self.assertRaisesRegex(ValueError, "rules"):

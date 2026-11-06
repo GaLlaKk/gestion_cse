@@ -66,6 +66,10 @@ fichier/traitement pour le flux Swile.
 - `domain/swile_additions.py`
   - `build_additions` applique les règles métier en mémoire; le service écrit
     les fichiers d’ajouts et d’ajouts ignorés.
+  - Les filtres d’e-mail et de poste partagent `swile.config.json` avec le
+    mapping des lieux. Chacun utilise `default_value` et des règles ordonnées
+    `patterns` / `value` (`inclure` ou `exclure`). Les valeurs par défaut
+    excluent `.ext` et les mots-clés de direction.
 - `services/swile_service.py`
   - `generate_work_location_values` produit un CSV Swile d’attribut
     (`Prénom`, `Nom de famille`, `E-mail`, `Matricule`, `Valeur`) ; les
@@ -73,14 +77,18 @@ fichier/traitement pour le flux Swile.
     `Lieu de travail` dans l’export Active Directory.
   - Toutes les lignes du CSV Swile sont conservées dans ce fichier (pas de
     filtre de domaine ni d’exclusion `.ext`).
-  - Le mapping de lieu est lu depuis
-    `lieux_travail.config.json` à la racine du projet. Les règles sont
+  - Le mapping de lieu est lu depuis `swile.config.json` à la racine du
+    projet. Les règles sont
     évaluées dans l’ordre; les termes d’un motif sont tous requis et les motifs
     d’une règle sont alternatifs. Si le fichier est absent, les valeurs
     intégrées restent Courcelles -> `Paris 145`, Wasquehal / avenue de la
     Marne -> `Lille 5.9`, Paris 133 -> `Paris 133`, sinon `Autre`.
-    L’interface de l’onglet « Valeurs de lieu de travail » permet d’ajouter,
-    supprimer et réordonner les motifs ainsi que d’enregistrer le mapping.
+    L’interface de l’onglet « Valeurs de lieu de travail » permet aussi
+    d’éditer les filtres d’ajouts; le fichier partagé conserve mapping et
+    filtres lors de l’enregistrement. L’ancien fichier
+    `lieux_travail.config.json` est lu en repli pour faciliter la migration.
+    Elle permet d’ajouter, supprimer et réordonner les motifs puis
+    d’enregistrer le mapping.
     Les archives d’exécutables incluent ce fichier à la racine, à côté de
     l’application.
 - `domain/normalization.py`
@@ -88,8 +96,9 @@ fichier/traitement pour le flux Swile.
     rapprochements. L’export garde le login original dans `Matricule`; le nom
     complet reste une clé de rapprochement distincte.
   - Les clés de rapprochement existantes sont l’email, le matricule normalisé
-    et le nom normalisé. Les exclusions comprennent les comptes externes
-    `.ext`, les doublons et certains postes de direction.
+    et le nom normalisé. Les ajouts filtrent les suffixes e-mail configurés,
+    les doublons et les mots-clés de poste configurés; `.ext` et les postes
+    de direction sont les valeurs par défaut.
 - `app/ui/cse_desktop_app.py` porte les colonnes requises et les délimiteurs
   affichés par l’interface; les garder cohérents si le format d’entrée change.
   L’onglet `liste_salarie_active_directory` accepte aussi un CSV Active

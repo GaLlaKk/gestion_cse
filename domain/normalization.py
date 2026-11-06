@@ -57,12 +57,19 @@ def active_directory_keys(user):
     }
 
 
-def is_direction_position(job_title):
+def is_direction_position(job_title, excluded_tokens=None):
     """Indique si un intitulé de poste correspond à une fonction de direction."""
     title_tokens = set(
         re.findall(r"[a-z0-9]+", remove_diacritics(job_title or ""))
     )
-    return bool(title_tokens & DIRECTION_TITLES)
+    if excluded_tokens is None:
+        excluded_tokens = DIRECTION_TITLES
+    normalized_excluded_tokens = {
+        remove_diacritics(token.strip())
+        for token in excluded_tokens
+        if token.strip()
+    }
+    return bool(title_tokens & normalized_excluded_tokens)
 
 
 def split_full_name(full_name):

@@ -11,11 +11,15 @@ from domain.normalization import (
     remove_diacritics,
 )
 from domain.matching import compare_users as match_users
-from domain.swile_additions import build_additions
+from domain.swile_additions import (
+    DEFAULT_ADDITION_FILTERS,
+    build_additions,
+)
 from services.csv_files import DEFAULT_TEMPLATE_FILE, read_csv
 from services.paths import bundled_resource, project_root
 
-WORK_LOCATION_CONFIG_PATH = (
+SWILE_CONFIG_PATH = project_root() / "swile.config.json"
+LEGACY_SWILE_CONFIG_PATH = (
     project_root() / "lieux_travail.config.json"
 )
 DEFAULT_WORK_LOCATION_MAPPING = {
@@ -103,10 +107,10 @@ def execute_swile_action(
         results.extend(
             (
                 f"Ajouts à importer : {addition_count} -> {additions_output_path}",
-                "Ajouts ignorés (postes de direction) : "
+                "Ajouts ignorés (filtre sur le poste) : "
                 f"{ignored_count} -> {ignored_path}",
-                f"Postes de direction exclus : {excluded_management}",
-                f"Adresses externes .ext exclues : {excluded_external}",
+                f"Lignes exclues par le filtre de poste : {excluded_management}",
+                f"Lignes exclues par le filtre d’e-mail : {excluded_external}",
                 f"Déjà présents dans Swile : {excluded_existing}",
             )
         )
@@ -182,6 +186,7 @@ def generate_additions(
     output_path,
     report_domain,
     ignored_output_path=None,
+    filters_config_path=None,
 ):
     """Génère les CSV d’ajouts Swile et d’ajouts ignorés."""
     _, swile_users = read_csv(
@@ -202,7 +207,12 @@ def generate_additions(
         excluded_existing,
         excluded_invalid,
         excluded_external,
-    ) = build_additions(swile_users, active_directory_users, report_domain)
+    ) = build_additions(
+        swile_users,
+        active_directory_users,
+        report_domain,
+        load_addition_filters(filters_config_path),
+    )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if ignored_output_path is None:
@@ -242,20 +252,153 @@ def generate_additions(
 
 def load_work_location_mapping(config_path=None):
     """Charge et valide le mapping des lieux, avec repli si le fichier manque."""
-    config_path = Path(config_path or WORK_LOCATION_CONFIG_PATH)
+    config_path = _resolve_swile_config_path(config_path)
     if not config_path.exists():
         mapping = copy.deepcopy(DEFAULT_WORK_LOCATION_MAPPING)
-        return _validate_work_location_mapping(mapping, config_path)
+    else:
+        try:
+            with config_path.open(encoding="utf-8") as config_file:
+                mapping = json.load(config_file)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                f"Configuration des lieux invalide ({config_path}) : {error}"
+            ) from error
+
+    validated_mapping = _validate_work_location_mapping(mapping, config_path)
+    return {
+        key: value
+        for key, value in validated_mapping.items()
+        if key != "filters"
+    }
+
+
+def load_addition_filters(config_path=None):
+    """Charge les filtres des ajouts ou applique les filtres historiques."""
+    config_path = _resolve_swile_config_path(config_path)
+    if not config_path.exists():
+        return copy.deepcopy(DEFAULT_ADDITION_FILTERS)
 
     try:
         with config_path.open(encoding="utf-8") as config_file:
-            mapping = json.load(config_file)
+            config = json.load(config_file)
     except json.JSONDecodeError as error:
         raise ValueError(
-            f"Configuration des lieux invalide ({config_path}) : {error}"
+            f"Configuration des filtres invalide ({config_path}) : {error}"
         ) from error
 
-    return _validate_work_location_mapping(mapping, config_path)
+    if not isinstance(config, dict):
+        raise ValueError(
+            f"La configuration des filtres doit être un objet JSON : "
+            f"{config_path}"
+        )
+    filters = config.get("filters", {})
+    return _validate_addition_filters(filters, config_path)
+
+
+def _validate_addition_filters(filters, config_path):
+    """Valide les règles de filtrage des e-mails et des postes."""
+    if not isinstance(filters, dict):
+        raise ValueError(f"'filters' doit être un objet JSON : {config_path}")
+    unknown_keys = filters.keys() - DEFAULT_ADDITION_FILTERS.keys()
+    if unknown_keys:
+        raise ValueError(
+            f"Clé(s) de filtre inconnue(s) {sorted(unknown_keys)} : "
+            f"{config_path}"
+        )
+
+    validated_filters = copy.deepcopy(DEFAULT_ADDITION_FILTERS)
+    for filter_name, default_config in validated_filters.items():
+        if filter_name not in filters:
+            continue
+        filter_config = filters[filter_name]
+        if not isinstance(filter_config, dict):
+            raise ValueError(
+                f"'filters.{filter_name}' doit être un objet JSON : "
+                f"{config_path}"
+            )
+        unknown_filter_keys = filter_config.keys() - {
+            "default_value",
+            "rules",
+        }
+        if unknown_filter_keys:
+            raise ValueError(
+                f"Clé(s) inconnue(s) dans 'filters.{filter_name}' : "
+                f"{sorted(unknown_filter_keys)} ({config_path})"
+            )
+        default_value = filter_config.get(
+            "default_value", default_config["default_value"]
+        )
+        rules = filter_config.get("rules", default_config["rules"])
+        if default_value not in ("inclure", "exclure"):
+            raise ValueError(
+                f"'filters.{filter_name}.default_value' doit valoir "
+                f"'inclure' ou 'exclure' : {config_path}"
+            )
+        if not isinstance(rules, list):
+            raise ValueError(
+                f"'filters.{filter_name}.rules' doit être une liste : "
+                f"{config_path}"
+            )
+        validated_rules = []
+        for index, rule in enumerate(rules, start=1):
+            if not isinstance(rule, dict) or rule.keys() - {
+                "patterns",
+                "value",
+            }:
+                raise ValueError(
+                    f"La règle {index} de 'filters.{filter_name}' doit "
+                    f"contenir uniquement 'patterns' et 'value' : "
+                    f"{config_path}"
+                )
+            patterns = rule.get("patterns")
+            value = rule.get("value")
+            if (
+                not isinstance(patterns, list)
+                or not patterns
+                or value not in ("inclure", "exclure")
+            ):
+                raise ValueError(
+                    f"La règle {index} de 'filters.{filter_name}' doit "
+                    f"contenir des 'patterns' et une 'value' égale à "
+                    f"'inclure' ou 'exclure' : {config_path}"
+                )
+            for pattern in patterns:
+                if (
+                    not isinstance(pattern, list)
+                    or not pattern
+                    or any(
+                        not isinstance(term, str) or not term.strip()
+                        for term in pattern
+                    )
+                ):
+                    raise ValueError(
+                        f"Chaque motif de la règle {index} de "
+                        f"'filters.{filter_name}' doit être une liste de "
+                        f"termes non vides : {config_path}"
+                    )
+            validated_rules.append(
+                {
+                    "patterns": [
+                        [term.strip() for term in pattern]
+                        for pattern in patterns
+                    ],
+                    "value": value,
+                }
+            )
+        validated_filters[filter_name] = {
+            "default_value": default_value,
+            "rules": validated_rules,
+        }
+    return validated_filters
+
+
+def _resolve_swile_config_path(config_path=None):
+    """Privilégie le nom commun et lit l’ancien nom pour migrer les installations."""
+    if config_path is not None:
+        return Path(config_path)
+    if SWILE_CONFIG_PATH.exists() or not LEGACY_SWILE_CONFIG_PATH.exists():
+        return SWILE_CONFIG_PATH
+    return LEGACY_SWILE_CONFIG_PATH
 
 
 def _validate_work_location_mapping(mapping, config_path):
@@ -306,10 +449,30 @@ def _validate_work_location_mapping(mapping, config_path):
     return mapping
 
 
-def save_work_location_mapping(mapping, config_path=None):
-    """Valide et enregistre atomiquement le mapping des lieux."""
-    config_path = Path(config_path or WORK_LOCATION_CONFIG_PATH)
-    _validate_work_location_mapping(mapping, config_path)
+def save_work_location_mapping(mapping, config_path=None, filters=None):
+    """Enregistre atomiquement le mapping des lieux et les filtres Swile."""
+    config_path = Path(config_path or SWILE_CONFIG_PATH)
+    existing_config = {}
+    if config_path.exists():
+        try:
+            with config_path.open(encoding="utf-8") as config_file:
+                existing_config = json.load(config_file)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                f"Configuration des lieux invalide ({config_path}) : {error}"
+            ) from error
+        if not isinstance(existing_config, dict):
+            raise ValueError(
+                f"La configuration des lieux doit être un objet JSON : "
+                f"{config_path}"
+            )
+
+    updated_config = {**existing_config, **mapping}
+    updated_config["filters"] = _validate_addition_filters(
+        filters if filters is not None else existing_config.get("filters", {}),
+        config_path,
+    )
+    _validate_work_location_mapping(updated_config, config_path)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = None
     try:
@@ -323,7 +486,12 @@ def save_work_location_mapping(mapping, config_path=None):
             delete=False,
         ) as temporary_file:
             temporary_path = Path(temporary_file.name)
-            json.dump(mapping, temporary_file, indent=2, ensure_ascii=False)
+            json.dump(
+                updated_config,
+                temporary_file,
+                indent=2,
+                ensure_ascii=False,
+            )
             temporary_file.write("\n")
         temporary_path.replace(config_path)
     finally:
