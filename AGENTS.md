@@ -35,12 +35,12 @@ racine sont des points d’entrée conservés pour lancer les traitements.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
 - `.github/workflows/release-gestion-cse.yml` exécute les tests unitaires et
-  construit les exécutables Windows, macOS Intel (runner `macos-15-intel`) et
-  Linux à chaque push de commit sur une branche, ainsi que pour les tags `v*`;
-  il publie les archives ZIP sur une release GitHub uniquement pour les tags
-  `v*`. Les artefacts incluent le modèle Swile, mais pas la configuration
-  Active Directory. Une exécution manuelle depuis une branche permet aussi de
-  valider tests et builds sans publier de release.
+  à chaque push sur une branche. Il construit les exécutables Windows, macOS
+  Intel (runner `macos-15-intel`) et Linux, puis publie les archives ZIP sur
+  une release GitHub uniquement pour les tags `v*`. Une exécution manuelle sur
+  une branche lance donc les tests sans construire d’exécutables ni publier
+  de release. Les artefacts incluent le modèle Swile, mais pas la configuration
+  Active Directory.
 - `.github/workflows/copilot-issue-resolver.yml` assigne les issues à Copilot
   coding agent uniquement après l’ajout manuel du label `copilot-ready`.
   L’activation nécessite Copilot coding agent et le secret
