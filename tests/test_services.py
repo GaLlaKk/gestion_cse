@@ -405,6 +405,85 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 ],
             )
 
+    def test_export_does_not_publish_csv_when_no_users_are_exported(self):
+        """Vérifie qu’aucun CSV d’en-tête seul n’est publié."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path = root / "config.json"
+            config_path.write_text(
+                (
+                    '{"start_user_email":"start@example.com",'
+                    '"client_id":"client-id","authority":"authority",'
+                    '"report_domain":"example.com","scopes":["scope"]}'
+                ),
+                encoding="utf-8",
+            )
+            output_directory = root / "out"
+            output_directory.mkdir()
+            flow = {"user_code": "ABCD1234", "message": "Sign in"}
+            client = Mock()
+            client.initiate_device_flow.return_value = flow
+            client.acquire_token_by_device_flow.return_value = {
+                "access_token": "token"
+            }
+            logger = Mock()
+
+            def graph_response(status_code=200, payload=None):
+                """Construit une réponse Graph simulée."""
+                response = Mock(status_code=status_code)
+                response.json.return_value = payload
+                response.raise_for_status.return_value = None
+                return response
+
+            def request_graph(url, **_kwargs):
+                """Retourne un compte externe sans rapport à exporter."""
+                if "/users/start@example.com?" in url:
+                    return graph_response(
+                        payload={
+                            "id": "root-id",
+                            "displayName": "External User",
+                            "mail": "external.ext@example.com",
+                            "userPrincipalName": "start@example.com",
+                        }
+                    )
+                if "/users/root-id/manager" in url:
+                    return graph_response(status_code=404)
+                if "/users/root-id/directReports" in url:
+                    return graph_response(payload={"value": []})
+                self.fail(f"URL Graph inattendue : {url}")
+
+            with (
+                patch.object(
+                    active_directory_export,
+                    "get_config_path",
+                    return_value=config_path,
+                ),
+                patch.object(
+                    active_directory_export,
+                    "initialize_output",
+                    return_value=(logger, output_directory, "20261028"),
+                ),
+                patch.object(
+                    active_directory_export,
+                    "PublicClientApplication",
+                    return_value=client,
+                ),
+                patch.object(
+                    active_directory_export.requests,
+                    "get",
+                    side_effect=request_graph,
+                ),
+            ):
+                result_path = active_directory_export.run_active_directory_export()
+
+            self.assertIsNone(result_path)
+            self.assertEqual(list(output_directory.glob("*.csv")), [])
+            self.assertEqual(list(output_directory.glob("*.tmp")), [])
+            self.assertFalse(
+                (output_directory / active_directory_export.RESUME_STATE_FILENAME)
+                .exists()
+            )
+
     def test_export_resumes_after_connection_error(self):
         """Vérifie la reprise automatique après une coupure réseau pendant la collecte."""
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1237,6 +1316,93 @@ class SwileServiceTests(unittest.TestCase):
         self.assertEqual(found_rows[0]["Email"], "ana@epsilon-france.com")
         self.assertEqual(missing_rows[0]["Email"], "zoe@example.net")
 
+    def test_compare_users_does_not_write_empty_result_files(self):
+        """Vérifie que la comparaison ne crée pas de CSV sans résultat."""
+        empty_swile_path = self._write_csv(
+            "swile-empty.csv",
+            ["Prénom", "Nom", "Email", "Matricule"],
+            [],
+            ";",
+        )
+
+        found_path, missing_path, found_count, missing_count = compare_users(
+            empty_swile_path,
+            self.active_directory_path,
+            self.output_directory,
+        )
+
+        self.assertEqual((found_count, missing_count), (0, 0))
+        self.assertFalse(found_path.exists())
+        self.assertFalse(missing_path.exists())
+
+    def test_generate_additions_does_not_write_empty_result_files(self):
+        """Vérifie que les ajouts ne créent pas de CSV sans résultat."""
+        all_users_swile_path = self._write_csv(
+            "swile-all-users.csv",
+            ["Prénom", "Nom", "Email", "Matricule"],
+            [
+                {
+                    "Prénom": "Ana",
+                    "Nom": "Doe",
+                    "Email": "ana@epsilon-france.com",
+                    "Matricule": "a1",
+                },
+                {
+                    "Prénom": "Jean",
+                    "Nom": "Nouveau",
+                    "Email": "jean@epsilon-france.com",
+                    "Matricule": "J-2",
+                },
+            ],
+            ";",
+        )
+        template_path = self._write_csv(
+            "empty-results-template.csv",
+            ["Prénom", "Nom", "Email", "Matricule"],
+            [],
+            ";",
+        )
+        output_path = self.output_directory / "empty-additions.csv"
+
+        result = generate_additions(
+            all_users_swile_path,
+            self.active_directory_path,
+            template_path,
+            output_path,
+            "epsilon-france.com",
+        )
+
+        self.assertEqual((result[0], result[2]), (0, 0))
+        self.assertFalse(output_path.exists())
+        self.assertFalse(result[1].exists())
+
+    def test_generate_work_location_values_does_not_write_empty_file(self):
+        """Vérifie que les valeurs de lieu ne créent pas de CSV vide."""
+        empty_swile_path = self._write_csv(
+            "swile-empty-locations.csv",
+            ["Prénom", "Nom", "Email", "Matricule"],
+            [],
+            ";",
+        )
+        empty_active_directory_path = self._write_csv(
+            "active-directory-empty-locations.csv",
+            ["Nom", "Email", "Identifiant", "Poste", "Lieu de travail"],
+            [],
+            ",",
+        )
+        output_path = self.output_directory / "empty-attribute-values.csv"
+
+        result_path, generated_count, _ = generate_work_location_values(
+            empty_swile_path,
+            empty_active_directory_path,
+            output_path,
+            "epsilon-france.com",
+        )
+
+        self.assertEqual(result_path, output_path)
+        self.assertEqual(generated_count, 0)
+        self.assertFalse(output_path.exists())
+
     def test_generate_additions_preserves_original_identifier(self):
         """Vérifie que l’ajout conserve le matricule AD d’origine."""
         template_path = self._write_csv(
@@ -1254,7 +1420,7 @@ class SwileServiceTests(unittest.TestCase):
 
         self.assertEqual(result[0], 1)
         self.assertEqual(result[2], 0)
-        self.assertTrue(result[1].exists())
+        self.assertFalse(result[1].exists())
         with output_path.open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.DictReader(stream, delimiter=";"))
         self.assertEqual(rows[0]["Matricule"], "J-2")

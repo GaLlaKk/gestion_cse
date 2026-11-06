@@ -834,7 +834,11 @@ def run_active_directory_export(
                 exported_keys_by_type,
             )
 
-        temporary_path.replace(csv_path)
+        if exported_count + appended_from_previous:
+            temporary_path.replace(csv_path)
+        else:
+            temporary_path.unlink(missing_ok=True)
+            temporary_path = None
         resume_state_path.unlink(missing_ok=True)
     except Exception:
         logger.exception(
@@ -848,12 +852,18 @@ def run_active_directory_export(
             )
         raise
 
-    logger.info(
-        "Terminé : %s personnes exportées (+%s depuis l’export précédent) dans %s.",
-        exported_count,
-        appended_from_previous,
-        csv_path,
-    )
+    if exported_count + appended_from_previous:
+        logger.info(
+            "Terminé : %s personnes exportées (+%s depuis l’export précédent) "
+            "dans %s.",
+            exported_count,
+            appended_from_previous,
+            csv_path,
+        )
+    else:
+        logger.info(
+            "Terminé : aucun compte à exporter ; aucun fichier CSV créé."
+        )
     if on_progress is not None:
         total_exported = exported_count + appended_from_previous
         on_progress(
@@ -862,7 +872,11 @@ def run_active_directory_export(
             "complete",
         )
 
-    return csv_path
+    return (
+        csv_path
+        if exported_count + appended_from_previous
+        else None
+    )
 
 
 def main():

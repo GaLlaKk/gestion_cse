@@ -169,6 +169,8 @@ def compare_users(swile_path, active_directory_path, output_directory):
         (found_path, found_users),
         (not_found_path, not_found_users),
     ):
+        if not users:
+            continue
         with output_path.open("w", newline="", encoding="utf-8") as csv_file:
             writer = csv.DictWriter(
                 csv_file, fieldnames=swile_columns, delimiter=";"
@@ -229,6 +231,8 @@ def generate_additions(
         (output_path, additions),
         (ignored_output_path, ignored_additions),
     ):
+        if not users:
+            continue
         with csv_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
             writer = csv.DictWriter(
                 csv_file,
@@ -612,20 +616,21 @@ def generate_work_location_values(
             }
         )
 
-    with output_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
-        writer = csv.DictWriter(
-            csv_file,
-            fieldnames=(
-                "Prénom",
-                "Nom de famille",
-                "E-mail",
-                "Matricule",
-                "Valeur",
-            ),
-            delimiter=";",
-        )
-        writer.writeheader()
-        writer.writerows(generated_rows)
+    if generated_rows:
+        with output_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
+            writer = csv.DictWriter(
+                csv_file,
+                fieldnames=(
+                    "Prénom",
+                    "Nom de famille",
+                    "E-mail",
+                    "Matricule",
+                    "Valeur",
+                ),
+                delimiter=";",
+            )
+            writer.writeheader()
+            writer.writerows(generated_rows)
 
     return (
         output_path,
