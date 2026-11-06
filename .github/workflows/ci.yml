@@ -33,8 +33,11 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install -r requirements-build.txt
 
+      - name: Install Xvfb for UI tests
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Lint (ruff)
         run: python -m ruff check .
 
       - name: Run unit tests
-        run: python -m unittest discover -s tests -v
+        run: xvfb-run -a python -m unittest discover -s tests -v
