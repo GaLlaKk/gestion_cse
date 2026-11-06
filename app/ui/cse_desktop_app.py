@@ -1478,7 +1478,7 @@ class CSEFileManager(TkinterDnD.Tk):
                 return
 
             shutil.copy2(source, destination)
-            if kind == "active_directory_previous":
+            if kind in ("active_directory", "active_directory_previous"):
                 os.utime(destination, None)
             self.status.set(f"Fichier enregistré : {destination.name}")
             self._refresh_file_labels()
@@ -1514,6 +1514,7 @@ class CSEFileManager(TkinterDnD.Tk):
                     return
             if source.resolve() != destination.resolve():
                 shutil.copy2(source, destination)
+                os.utime(destination, None)
             self.status.set(f"Dernier export copié : {source.name}")
             self._refresh_file_labels()
         except (OSError, UnicodeError, ValueError) as error:
@@ -1619,10 +1620,11 @@ class CSEFileManager(TkinterDnD.Tk):
     ):
         """Exécute l’export AD ou l’action Swile hors du thread graphique."""
         output_writer = _OutputWriter(self)
+        active_directory_export_path = None
         try:
             with redirect_stdout(output_writer), redirect_stderr(output_writer):
                 if action == "active_directory":
-                    run_active_directory_export(
+                    active_directory_export_path = run_active_directory_export(
                         on_device_code=self._schedule_device_code_dialog,
                         download_photos=download_photos,
                         previous_export_path=previous_export_path,
@@ -1638,7 +1640,16 @@ class CSEFileManager(TkinterDnD.Tk):
                     print(result)
             self.after(
                 0,
-                lambda: self._finish_run(output_writer.getvalue(), "", 0),
+                lambda: self._finish_run(
+                    output_writer.getvalue(),
+                    "",
+                    0,
+                    active_directory_export_path=(
+                        active_directory_export_path
+                        if action == "active_directory"
+                        else None
+                    ),
+                ),
             )
         except Exception:
             error = traceback.format_exc()
@@ -1781,7 +1792,13 @@ class CSEFileManager(TkinterDnD.Tk):
                 parent=self,
             )
 
-    def _finish_run(self, stdout, stderr, returncode):
+    def _finish_run(
+        self,
+        stdout,
+        stderr,
+        returncode,
+        active_directory_export_path=None,
+    ):
         """Rétablit l’interface et affiche le résultat ou l’erreur du traitement."""
         completed_action = self.current_action
         if self.device_code_dialog is not None:
@@ -1809,6 +1826,11 @@ class CSEFileManager(TkinterDnD.Tk):
         self._refresh_file_labels()
         if completed_action == "active_directory" and returncode == 0:
             self._set_previous_export_section_default_visibility()
+            if active_directory_export_path is not None:
+                self._copy_input_file(
+                    active_directory_export_path,
+                    "active_directory",
+                )
         if returncode != 0:
             messagebox.showerror(
                 "Échec du traitement",

@@ -26,8 +26,10 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   facultatif d’export précédent est placé sous les contrôles de génération et
   de configuration Active Directory. Il est replié si un export précédent
   valide existe, déplié sinon; le dernier export généré est automatiquement
-  utilisé comme export précédent à la prochaine collecte. L’export Active Directory transmet un
-  callback de progression à l’interface, qui affiche une barre non bloquante
+  utilisé comme export précédent à la prochaine collecte et copié dans
+  `swile_active_directory/in` après une collecte réussie pour devenir la source
+  Active Directory des traitements Swile. L’export Active Directory transmet
+  un callback de progression à l’interface, qui affiche une barre non bloquante
   basée sur le volume du dernier export valide (ou 500 personnes par défaut)
   et réévalue l’estimation si le volume dépasse la cible.
   Les contenus des onglets Active Directory et des deux sous-onglets Swile
