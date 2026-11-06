@@ -4,7 +4,7 @@ charset-normalizer==3.5.2
 cryptography==50.0.2
 idna==3.20
 msal==1.39.0
-pycparser==3.11
+pycparser==3.12
 PyJWT==2.15.1
 requests==2.34.2
 tkinterdnd2==0.6.4
