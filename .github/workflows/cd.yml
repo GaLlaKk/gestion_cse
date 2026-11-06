@@ -60,6 +60,10 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install -r requirements-build.txt
 
+      - name: Stamp version from tag
+        shell: bash
+        run: echo "__version__ = \"${GITHUB_REF_NAME}\"" > services/version.py
+
       - name: Build desktop executable
         run: >-
           python -m PyInstaller
@@ -78,6 +82,7 @@ jobs:
         shell: pwsh
         run: |
           @'
+          Gestion CSE ${{ github.ref_name }}
           Lancer GestionCSE.exe.
 
           Le modèle CSV Swile est embarqué dans l'exécutable.
@@ -101,6 +106,7 @@ jobs:
         shell: bash
         run: |
           cat > dist/LIRE_AVANT_LANCEMENT.txt << 'EOF'
+          Gestion CSE ${{ github.ref_name }}
           Lancer GestionCSE.
 
           Le modèle CSV Swile est embarqué dans l'exécutable.
@@ -127,7 +133,7 @@ jobs:
           Compress-Archive `
             -Path dist\GestionCSE.exe, dist\LIRE_AVANT_LANCEMENT.txt, `
               dist\swile.config.json `
-            -DestinationPath artifacts\GestionCSE-windows-${{ runner.arch }}.zip `
+            -DestinationPath artifacts\GestionCSE-${{ github.ref_name }}-windows-${{ runner.arch }}.zip `
             -Force
 
       - name: Package executable (macOS and Linux)
@@ -135,7 +141,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          zip -j "artifacts/GestionCSE-${{ matrix.platform }}-${{ runner.arch }}.zip" \
+          zip -j "artifacts/GestionCSE-${{ github.ref_name }}-${{ matrix.platform }}-${{ runner.arch }}.zip" \
             dist/GestionCSE dist/LIRE_AVANT_LANCEMENT.txt \
             dist/swile.config.json
 

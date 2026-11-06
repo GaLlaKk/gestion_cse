@@ -18,7 +18,12 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   point d’entrée.
 - `domain/matching.py` compare l’export AD à l’export Swile.
 - `domain/swile_additions.py` prépare les fichiers d’ajouts et d’ajouts ignorés.
-- `app/ui/cse_desktop_app.py` fournit l’interface Tkinter.
+- `app/ui/cse_desktop_app.py` fournit l’interface Tkinter; la fenêtre est
+  construite par des méthodes `_build_*`. Les éditeurs Swile (mapping, filtres)
+  sont dans `app/ui/swile_config_editor.py` et le panneau Active Directory
+  (configuration, progression, dialogue de connexion) dans
+  `app/ui/active_directory_panel.py`, tous deux sous forme de mixins de
+  `CSEFileManager`; les constantes partagées sont dans `app/ui/constants.py`.
   La fenêtre principale est optimisée paysage avec les listes Swile et Active
   Directory côte à côte, ainsi qu’un panneau de suivi/résultats redimensionnable
   à côté des onglets. La configuration Active Directory reste repliable et
@@ -35,6 +40,14 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   jusqu’à la fin, où la barre se remplit entièrement et reste figée.
   Les contenus des onglets Active Directory et des deux sous-onglets Swile
   défilent verticalement avec une barre d’ascenseur et la molette.
+- `services/active_directory_config.py` porte la configuration AD,
+  `services/graph_client.py` le client Graph (nouvelles tentatives, 429) et
+  `services/atomic_files.py` l’écriture atomique (`atomic_write`) partagée.
+  `run_active_directory_export` délègue à `ActiveDirectoryCollector`.
+- `services/version.py` vaut `dev` en local; le workflow CD le remplace par le
+  tag avant le build. La version apparaît dans le titre de la fenêtre, le nom
+  des archives (`GestionCSE-vX.Y.Z-<plateforme>-<arch>.zip`) et
+  `LIRE_AVANT_LANCEMENT.txt`.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
 - `.github/workflows/ci.yml` exécute les tests unitaires sur chaque pull
@@ -165,9 +178,13 @@ fichier/traitement pour le flux Swile.
   non suivis. Ne pas les supprimer, les écraser ni les ajouter au dépôt sans
   demande explicite ; éviter notamment un `git add` global.
 - Aucun test automatisé n’a été repéré lors de la création de ce contexte.
-  Les tests unitaires sont maintenant dans `tests/` et se lancent avec
-  `python -m unittest discover -s tests -v`. Ils couvrent normalisation,
-  rapprochements, règles d’ajout, chemins d’exécution et services CSV.
+  Les tests unitaires sont maintenant dans `tests/` (un fichier par module) et
+  se lancent avec `python -m unittest discover -s tests -v`. Ils couvrent
+  normalisation, rapprochements, règles d’ajout, chemins d’exécution, services
+  CSV, client Graph et écritures atomiques. La CI lance aussi
+  `python -m ruff check .` (règles `F`, voir `ruff.toml`). Dans les tests de
+  l’export AD, patcher `services.graph_client.time.sleep` pour éviter les
+  attentes réelles.
   Pour une modification Python ciblée, `python -m py_compile` sur le script
   concerné est une vérification minimale, pas un substitut à ces tests.
 

@@ -1,7 +1,6 @@
 import csv
 import copy
 import json
-import tempfile
 from datetime import date, datetime
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from domain.swile_additions import (
     DEFAULT_ADDITION_FILTERS,
     build_additions,
 )
+from services.atomic_files import atomic_write
 from services.csv_files import DEFAULT_TEMPLATE_FILE, read_csv
 from services.paths import bundled_resource, project_root
 
@@ -48,6 +48,104 @@ DEFAULT_WORK_LOCATION_MAPPING = {
 }
 
 
+def _compare_summary(swile_path, active_directory_path, output_directory):
+    """Lance la comparaison et retourne les lignes de résumé."""
+    found_path, not_found_path, found_count, not_found_count = compare_users(
+        swile_path, active_directory_path, output_directory
+    )
+    return [
+        f"Utilisateurs trouvés : {found_count} -> {found_path}",
+        f"Utilisateurs non trouvés : {not_found_count} -> {not_found_path}",
+    ]
+
+
+def _additions_summary(
+    swile_path,
+    active_directory_path,
+    template_path,
+    output_directory,
+    output_path,
+    ignored_output_path,
+    report_domain,
+):
+    """Génère les ajouts et retourne les lignes de résumé."""
+    root = project_root()
+    additions_output_path = output_path or (
+        output_directory
+        / f"collaborators-additions-{datetime.now():%Y%m%dt%H%M%S}.csv"
+    )
+    template_path = template_path or (
+        root / "swile_active_directory" / "in" / DEFAULT_TEMPLATE_FILE
+    )
+    if not template_path.exists():
+        template_path = bundled_resource(
+            "swile_active_directory", "in", DEFAULT_TEMPLATE_FILE
+        )
+    (
+        addition_count,
+        ignored_path,
+        ignored_count,
+        excluded_management,
+        excluded_existing,
+        excluded_invalid,
+        excluded_external,
+    ) = generate_additions(
+        swile_path,
+        active_directory_path,
+        template_path,
+        additions_output_path,
+        report_domain,
+        ignored_output_path,
+    )
+    lines = [
+        f"Ajouts à importer : {addition_count} -> {additions_output_path}",
+        "Ajouts ignorés (filtre sur le poste) : "
+        f"{ignored_count} -> {ignored_path}",
+        f"Lignes exclues par le filtre de poste : {excluded_management}",
+        f"Lignes exclues par le filtre d’e-mail : {excluded_external}",
+        f"Déjà présents dans Swile : {excluded_existing}",
+    ]
+    if excluded_invalid:
+        lines.append(
+            f"Lignes ignorées faute de nom exploitable : {excluded_invalid}"
+        )
+    return lines
+
+
+def _location_values_summary(
+    swile_path,
+    active_directory_path,
+    output_directory,
+    output_path,
+    report_domain,
+):
+    """Génère les valeurs de lieu et retourne les lignes de résumé."""
+    location_values_output_path = output_path or (
+        output_directory
+        / f"collaborators-attribute-values-{date.today():%Y%m%dt%H%M%S}.csv"
+    )
+    (
+        generated_path,
+        generated_count,
+        missing_work_location_column,
+    ) = generate_work_location_values(
+        swile_path,
+        active_directory_path,
+        location_values_output_path,
+        report_domain,
+    )
+    lines = [
+        "Valeurs de lieu de travail générées : "
+        f"{generated_count} -> {generated_path}"
+    ]
+    if missing_work_location_column:
+        lines.append(
+            "La colonne 'Lieu de travail' est absente du fichier Active "
+            "Directory ; la valeur 'Autre' a été appliquée."
+        )
+    return lines
+
+
 def execute_swile_action(
     action,
     swile_path,
@@ -59,93 +157,36 @@ def execute_swile_action(
     report_domain="epsilon-france.com",
 ):
     """Orchestre comparaison, ajouts Swile ou génération des lieux."""
-    root = project_root()
     output_directory = output_directory or (
-        root / "swile_active_directory" / "out"
+        project_root() / "swile_active_directory" / "out"
     )
     results = []
-
     if action in ("compare", "all"):
-        found_path, not_found_path, found_count, not_found_count = compare_users(
-            swile_path, active_directory_path, output_directory
-        )
         results.extend(
-            (
-                f"Utilisateurs trouvés : {found_count} -> {found_path}",
-                f"Utilisateurs non trouvés : {not_found_count} -> {not_found_path}",
-            )
+            _compare_summary(swile_path, active_directory_path, output_directory)
         )
-
     if action in ("additions", "all"):
-        additions_output_path = output_path or (
-            output_directory
-            / f"collaborators-additions-{datetime.now():%Y%m%dt%H%M%S}.csv"
-        )
-        template_path = template_path or (
-            root / "swile_active_directory" / "in" / DEFAULT_TEMPLATE_FILE
-        )
-        if not template_path.exists():
-            template_path = bundled_resource(
-                "swile_active_directory", "in", DEFAULT_TEMPLATE_FILE
-            )
-        (
-            addition_count,
-            ignored_path,
-            ignored_count,
-            excluded_management,
-            excluded_existing,
-            excluded_invalid,
-            excluded_external,
-        ) = generate_additions(
-            swile_path,
-            active_directory_path,
-            template_path,
-            additions_output_path,
-            report_domain,
-            ignored_output_path,
-        )
         results.extend(
-            (
-                f"Ajouts à importer : {addition_count} -> {additions_output_path}",
-                "Ajouts ignorés (filtre sur le poste) : "
-                f"{ignored_count} -> {ignored_path}",
-                f"Lignes exclues par le filtre de poste : {excluded_management}",
-                f"Lignes exclues par le filtre d’e-mail : {excluded_external}",
-                f"Déjà présents dans Swile : {excluded_existing}",
+            _additions_summary(
+                swile_path,
+                active_directory_path,
+                template_path,
+                output_directory,
+                output_path,
+                ignored_output_path,
+                report_domain,
             )
         )
-        if excluded_invalid:
-            results.append(
-                f"Lignes ignorées faute de nom exploitable : {excluded_invalid}"
-            )
-
     if action == "location_values":
-        location_values_output_path = output_path or (
-            output_directory
-            / f"collaborators-attribute-values-{date.today():%Y%m%dt%H%M%S}.csv"
-        )
-        (
-            generated_path,
-            generated_count,
-            missing_work_location_column,
-        ) = generate_work_location_values(
-            swile_path,
-            active_directory_path,
-            location_values_output_path,
-            report_domain,
-        )
         results.extend(
-            (
-                "Valeurs de lieu de travail générées : "
-                f"{generated_count} -> {generated_path}",
+            _location_values_summary(
+                swile_path,
+                active_directory_path,
+                output_directory,
+                output_path,
+                report_domain,
             )
         )
-        if missing_work_location_column:
-            results.append(
-                "La colonne 'Lieu de travail' est absente du fichier Active "
-                "Directory ; la valeur 'Autre' a été appliquée."
-            )
-
     return "\n".join(results)
 
 
@@ -299,6 +340,49 @@ def load_addition_filters(config_path=None):
     return _validate_addition_filters(filters, config_path)
 
 
+def _validate_patterns(patterns, rule_label, config_path):
+    """Vérifie que chaque motif est une liste non vide de termes non vides."""
+    for pattern in patterns:
+        if (
+            not isinstance(pattern, list)
+            or not pattern
+            or any(
+                not isinstance(term, str) or not term.strip()
+                for term in pattern
+            )
+        ):
+            raise ValueError(
+                f"Chaque motif de la règle {rule_label} doit être une liste "
+                f"de termes non vides : {config_path}"
+            )
+
+
+def _validate_filter_rule(index, rule, filter_name, config_path):
+    """Valide une règle de filtre et retourne sa version normalisée."""
+    scope = f"'filters.{filter_name}'"
+    if not isinstance(rule, dict) or rule.keys() - {"patterns", "value"}:
+        raise ValueError(
+            f"La règle {index} de {scope} doit contenir uniquement "
+            f"'patterns' et 'value' : {config_path}"
+        )
+    patterns = rule.get("patterns")
+    value = rule.get("value")
+    if (
+        not isinstance(patterns, list)
+        or not patterns
+        or value not in ("inclure", "exclure")
+    ):
+        raise ValueError(
+            f"La règle {index} de {scope} doit contenir des 'patterns' et "
+            f"une 'value' égale à 'inclure' ou 'exclure' : {config_path}"
+        )
+    _validate_patterns(patterns, f"{index} de {scope}", config_path)
+    return {
+        "patterns": [[term.strip() for term in pattern] for pattern in patterns],
+        "value": value,
+    }
+
+
 def _validate_addition_filters(filters, config_path):
     """Valide les règles de filtrage des e-mails et des postes."""
     if not isinstance(filters, dict):
@@ -343,55 +427,12 @@ def _validate_addition_filters(filters, config_path):
                 f"'filters.{filter_name}.rules' doit être une liste : "
                 f"{config_path}"
             )
-        validated_rules = []
-        for index, rule in enumerate(rules, start=1):
-            if not isinstance(rule, dict) or rule.keys() - {
-                "patterns",
-                "value",
-            }:
-                raise ValueError(
-                    f"La règle {index} de 'filters.{filter_name}' doit "
-                    f"contenir uniquement 'patterns' et 'value' : "
-                    f"{config_path}"
-                )
-            patterns = rule.get("patterns")
-            value = rule.get("value")
-            if (
-                not isinstance(patterns, list)
-                or not patterns
-                or value not in ("inclure", "exclure")
-            ):
-                raise ValueError(
-                    f"La règle {index} de 'filters.{filter_name}' doit "
-                    f"contenir des 'patterns' et une 'value' égale à "
-                    f"'inclure' ou 'exclure' : {config_path}"
-                )
-            for pattern in patterns:
-                if (
-                    not isinstance(pattern, list)
-                    or not pattern
-                    or any(
-                        not isinstance(term, str) or not term.strip()
-                        for term in pattern
-                    )
-                ):
-                    raise ValueError(
-                        f"Chaque motif de la règle {index} de "
-                        f"'filters.{filter_name}' doit être une liste de "
-                        f"termes non vides : {config_path}"
-                    )
-            validated_rules.append(
-                {
-                    "patterns": [
-                        [term.strip() for term in pattern]
-                        for pattern in patterns
-                    ],
-                    "value": value,
-                }
-            )
         validated_filters[filter_name] = {
             "default_value": default_value,
-            "rules": validated_rules,
+            "rules": [
+                _validate_filter_rule(index, rule, filter_name, config_path)
+                for index, rule in enumerate(rules, start=1)
+            ],
         }
     return validated_filters
 
@@ -437,19 +478,7 @@ def _validate_work_location_mapping(mapping, config_path):
                 f"La règle {index} doit contenir 'value' et 'patterns' : "
                 f"{config_path}"
             )
-        for pattern in patterns:
-            if (
-                not isinstance(pattern, list)
-                or not pattern
-                or any(
-                    not isinstance(term, str) or not term.strip()
-                    for term in pattern
-                )
-            ):
-                raise ValueError(
-                    f"Chaque motif de la règle {index} doit être une liste "
-                    f"de termes non vides : {config_path}"
-                )
+        _validate_patterns(patterns, str(index), config_path)
     return mapping
 
 
@@ -478,29 +507,11 @@ def save_work_location_mapping(mapping, config_path=None, filters=None):
     )
     _validate_work_location_mapping(updated_config, config_path)
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            newline="\n",
-            dir=config_path.parent,
-            prefix=f".{config_path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
-            json.dump(
-                updated_config,
-                temporary_file,
-                indent=2,
-                ensure_ascii=False,
-            )
-            temporary_file.write("\n")
-        temporary_path.replace(config_path)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+    def write_config(stream):
+        json.dump(updated_config, stream, indent=2, ensure_ascii=False)
+        stream.write("\n")
+
+    atomic_write(config_path, write_config, encoding="utf-8", newline="\n")
     return config_path
 
 
@@ -518,6 +529,48 @@ def map_work_location_value(work_location, mapping=None):
     return mapping["default_value"]
 
 
+LOCATION_VALUE_COLUMNS = (
+    "Prénom",
+    "Nom de famille",
+    "E-mail",
+    "Matricule",
+    "Valeur",
+)
+
+
+def _read_active_directory_users_with_locations(active_directory_path):
+    """Lit l’export AD; indique si la colonne « Lieu de travail » manque."""
+    required_columns = {"Nom", "Email", "Identifiant", "Poste"}
+    try:
+        _, users = read_csv(
+            active_directory_path,
+            ",",
+            required_columns | {"Lieu de travail"},
+        )
+    except ValueError as error:
+        if "Lieu de travail" not in str(error):
+            raise
+        _, users = read_csv(active_directory_path, ",", required_columns)
+        return users, True
+    return users, False
+
+
+def _index_active_directory_users(active_directory_users):
+    """Indexe les comptes AD par e-mail, matricule normalisé et nom normalisé."""
+    by_email, by_matricule, by_name = {}, {}, {}
+    for user in active_directory_users:
+        email_key = (user.get("Email") or "").strip().casefold()
+        if email_key:
+            by_email[email_key] = user
+        matricule_key = normalize_matricule(user.get("Identifiant") or "")
+        if matricule_key:
+            by_matricule[matricule_key] = user
+        name_key = normalize_name(user.get("Nom") or "")
+        if name_key:
+            by_name[name_key] = user
+    return by_email, by_matricule, by_name
+
+
 def generate_work_location_values(
     swile_path,
     active_directory_path,
@@ -531,23 +584,10 @@ def generate_work_location_values(
     _, swile_users = read_csv(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
-    try:
-        _, active_directory_users = read_csv(
-            active_directory_path,
-            ",",
-            {"Nom", "Email", "Identifiant", "Poste", "Lieu de travail"},
-        )
-    except ValueError as error:
-        if "Lieu de travail" not in str(error):
-            raise
-        missing_work_location_column = True
-        _, active_directory_users = read_csv(
-            active_directory_path,
-            ",",
-            {"Nom", "Email", "Identifiant", "Poste"},
-        )
-    else:
-        missing_work_location_column = False
+    (
+        active_directory_users,
+        missing_work_location_column,
+    ) = _read_active_directory_users_with_locations(active_directory_path)
 
     found_users, _ = match_users(swile_users, active_directory_users)
     additions = build_additions(
@@ -556,46 +596,30 @@ def generate_work_location_values(
         report_domain,
         load_addition_filters(filters_config_path),
     )[0]
-    source_users = found_users + additions
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    locations_by_email = {}
-    locations_by_matricule = {}
-    locations_by_name = {}
-    for user in active_directory_users:
-        email_key = (user.get("Email") or "").strip().casefold()
-        if email_key:
-            locations_by_email[email_key] = user
-        matricule_key = normalize_matricule(user.get("Identifiant") or "")
-        if matricule_key:
-            locations_by_matricule[matricule_key] = user
-        name_key = normalize_name(user.get("Nom") or "")
-        if name_key:
-            locations_by_name[name_key] = user
+    by_email, by_matricule, by_name = _index_active_directory_users(
+        active_directory_users
+    )
 
     generated_rows = []
-    for user in source_users:
+    for user in found_users + additions:
         email = (user.get("Email") or "").strip()
         first_name = (user.get("Prénom") or "").strip()
         last_name = (user.get("Nom") or "").strip()
-
         swile_matricule = (user.get("Matricule") or "").strip()
-        normalized_email = email.casefold()
-        matched_active_directory_user = (
-            locations_by_email.get(normalized_email)
-            or locations_by_matricule.get(normalize_matricule(swile_matricule))
-            or locations_by_name.get(normalize_name(f"{first_name} {last_name}"))
+        active_directory_user = (
+            by_email.get(email.casefold())
+            or by_matricule.get(normalize_matricule(swile_matricule))
+            or by_name.get(normalize_name(f"{first_name} {last_name}"))
         )
-        matricule = (
-            (
-                (
-                    matched_active_directory_user.get("Identifiant")
-                    if matched_active_directory_user
-                    else ""
-                )
-                or swile_matricule
+        work_location = None
+        matricule = swile_matricule
+        if active_directory_user:
+            matricule = (
+                active_directory_user.get("Identifiant") or swile_matricule
             ).strip()
-        )
+            if not missing_work_location_column:
+                work_location = active_directory_user.get("Lieu de travail")
         generated_rows.append(
             {
                 "Prénom": first_name,
@@ -603,15 +627,7 @@ def generate_work_location_values(
                 "E-mail": email,
                 "Matricule": matricule,
                 "Valeur": map_work_location_value(
-                    (
-                        matched_active_directory_user.get("Lieu de travail")
-                        if (
-                            matched_active_directory_user
-                            and not missing_work_location_column
-                        )
-                        else None
-                    ),
-                    work_location_mapping,
+                    work_location, work_location_mapping
                 ),
             }
         )
@@ -619,21 +635,9 @@ def generate_work_location_values(
     if generated_rows:
         with output_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
             writer = csv.DictWriter(
-                csv_file,
-                fieldnames=(
-                    "Prénom",
-                    "Nom de famille",
-                    "E-mail",
-                    "Matricule",
-                    "Valeur",
-                ),
-                delimiter=";",
+                csv_file, fieldnames=LOCATION_VALUE_COLUMNS, delimiter=";"
             )
             writer.writeheader()
             writer.writerows(generated_rows)
 
-    return (
-        output_path,
-        len(generated_rows),
-        missing_work_location_column,
-    )
+    return output_path, len(generated_rows), missing_work_location_column
