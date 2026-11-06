@@ -856,7 +856,11 @@ def run_active_directory_export(
     )
     if on_progress is not None:
         total_exported = exported_count + appended_from_previous
-        on_progress(total_exported, total_exported, "complete")
+        on_progress(
+            total_exported,
+            max(estimated_people, total_exported),
+            "complete",
+        )
 
     return csv_path
 
