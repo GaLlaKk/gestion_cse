@@ -221,6 +221,16 @@ Pour activer le workflow :
    en lecture/écriture aux Actions, contenus, issues et pull requests.
    L’assignation utilise l’API REST GitHub pour ajouter
    `copilot-swe-agent[bot]` à l’issue avec la branche par défaut comme base.
+   Le token doit viser ce dépôt et appartenir à un utilisateur ayant un accès
+   en écriture; Copilot coding agent doit aussi être activé pour le dépôt.
+   Après toute modification des permissions du token, mettez à jour le secret
+   `COPILOT_ASSIGNMENT_TOKEN` avec le token correspondant.
+
+En cas d’erreur HTTP, le workflow affiche le code et le message renvoyé par
+GitHub, sans afficher le token. Une réponse `403` signifie que GitHub refuse
+l’autorisation de l’appel; vérifiez les permissions et la sélection du dépôt
+du token, l’accès en écriture de son propriétaire, ainsi que l’activation de
+Copilot coding agent.
 
 Le workflow est volontairement déclenché uniquement par ce label de validation;
 aucune clé OpenAI n’est nécessaire.

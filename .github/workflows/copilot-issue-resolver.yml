@@ -66,12 +66,23 @@ jobs:
               }
             }')
 
-          result=$(gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "/repos/$GH_REPO/issues/$ISSUE_NUMBER/assignees" \
-            --input - <<< "$payload")
+          response=$(curl --silent --show-error \
+            --write-out $'\n%{http_code}' \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "https://api.github.com/repos/$GH_REPO/issues/$ISSUE_NUMBER/assignees")
+          http_status="${response##*$'\n'}"
+          result="${response%$'\n'*}"
+
+          if [[ ! "$http_status" =~ ^2 ]]; then
+            echo "::error::GitHub assignment API returned HTTP $http_status."
+            jq -c '{message}' <<< "$result" >&2
+            exit 1
+          fi
 
           if ! jq -e \
             '(.assignees // [])
