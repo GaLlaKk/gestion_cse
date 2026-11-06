@@ -31,7 +31,8 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   Active Directory des traitements Swile. L’export Active Directory transmet
   un callback de progression à l’interface, qui affiche une barre non bloquante
   basée sur le volume du dernier export valide (ou 500 personnes par défaut)
-  et réévalue l’estimation si le volume dépasse la cible.
+  et réévalue l’estimation si le volume dépasse la cible. La cible est conservée
+  jusqu’à la fin, où la barre se remplit entièrement et reste figée.
   Les contenus des onglets Active Directory et des deux sous-onglets Swile
   défilent verticalement avec une barre d’ascenseur et la molette.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.

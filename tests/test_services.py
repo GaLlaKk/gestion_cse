@@ -401,7 +401,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     (0, 500, "connecting"),
                     (0, 500, "collecting"),
                     (1, 500, "collecting"),
-                    (1, 1, "complete"),
+                    (1, 500, "complete"),
                 ],
             )
 
