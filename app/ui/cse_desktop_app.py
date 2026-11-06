@@ -119,6 +119,22 @@ class CSEFileManager(TkinterDnD.Tk):
         self.current_action = None
         self.device_code_dialog = None
         self.download_photos = tk.BooleanVar(value=False)
+        self.addition_filter_rows = {}
+        self.addition_filter_default_values = {}
+        self.addition_filter_default_entries = {}
+        self.addition_filter_rules_frames = {}
+        self.addition_filter_add_buttons = {}
+        self.addition_filter_toggle_controls = {}
+        self.addition_filter_expanded = {
+            "email": tk.BooleanVar(value=False),
+            "poste": tk.BooleanVar(value=False),
+        }
+        self.addition_filter_sections = {}
+        self.work_location_mapping_controls = []
+        self.scrollable_tab_areas = {}
+        self.bind_all("<MouseWheel>", self._on_tab_mousewheel)
+        self.bind_all("<Button-4>", self._on_tab_mousewheel)
+        self.bind_all("<Button-5>", self._on_tab_mousewheel)
 
         heading = tk.Frame(self)
         heading.pack(fill="x", pady=(0, 10))
@@ -206,13 +222,16 @@ class CSEFileManager(TkinterDnD.Tk):
         )
         self.output.pack(fill="both", expand=True, pady=(4, 8))
 
-        active_directory_tab = tk.Frame(self.tabs, padx=12, pady=12)
+        active_directory_tab = tk.Frame(self.tabs)
         swile_tab = tk.Frame(self.tabs, padx=12, pady=12)
         self.tabs.add(active_directory_tab, text="liste_salarie_active_directory")
         self.tabs.add(swile_tab, text="swile_active_directory")
+        active_directory_content = self._create_scrollable_tab(
+            active_directory_tab, padx=12, pady=12
+        )
 
         tk.Label(
-            active_directory_tab,
+            active_directory_content,
             text=(
                 "Génère la liste des salariés depuis Microsoft Active Directory. "
                 "Une connexion Microsoft peut être demandée dans cette fenêtre."
@@ -222,7 +241,7 @@ class CSEFileManager(TkinterDnD.Tk):
             wraplength=900,
             fg="#555555",
         ).pack(fill="x", pady=(0, 10))
-        active_directory_columns = tk.Frame(active_directory_tab)
+        active_directory_columns = tk.Frame(active_directory_content)
         active_directory_columns.pack(fill="both", expand=True)
         active_directory_primary = tk.Frame(active_directory_columns)
         active_directory_primary.pack(fill="x")
@@ -407,14 +426,20 @@ class CSEFileManager(TkinterDnD.Tk):
 
         swile_subtabs = ttk.Notebook(swile_tab)
         swile_subtabs.pack(fill="both", expand=True)
-        compare_lists_tab = tk.Frame(swile_subtabs, padx=8, pady=8)
-        location_values_tab = tk.Frame(swile_subtabs, padx=8, pady=8)
+        compare_lists_tab = tk.Frame(swile_subtabs)
+        location_values_tab = tk.Frame(swile_subtabs)
         swile_subtabs.add(compare_lists_tab, text="Comparer les listes")
         swile_subtabs.add(
             location_values_tab, text="Valeurs de lieu de travail"
         )
+        compare_lists_content = self._create_scrollable_tab(
+            compare_lists_tab, padx=8, pady=8
+        )
+        location_values_content = self._create_scrollable_tab(
+            location_values_tab, padx=8, pady=8
+        )
 
-        compare_section = tk.Frame(compare_lists_tab, padx=10, pady=8)
+        compare_section = tk.Frame(compare_lists_content, padx=10, pady=8)
         compare_section.pack(fill="both", expand=True, pady=4)
         compare_section.columnconfigure(0, weight=1, uniform="compare")
         compare_section.columnconfigure(1, weight=1, uniform="compare")
@@ -431,9 +456,49 @@ class CSEFileManager(TkinterDnD.Tk):
             "Comparer les listes et préparer les ajouts Swile",
             "all",
         )
-        
+        addition_filters_section = tk.Frame(compare_section)
+        addition_filters_section.grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0)
+        )
+        for filter_name, filter_title in (
+            (
+                "email",
+                "Filtrage des adresses e-mail "
+                "(fichier de création des ajouts Swile)",
+            ),
+            (
+                "poste",
+                "Filtrage des postes "
+                "(fichier de création des ajouts Swile)",
+            ),
+        ):
+            filter_container = tk.Frame(addition_filters_section)
+            filter_container.pack(fill="x")
+            filter_toggle = ttk.Checkbutton(
+                filter_container,
+                text=(
+                    "Afficher le filtrage des e-mails pour le fichier de "
+                    "création des ajouts Swile"
+                    if filter_name == "email"
+                    else "Afficher le filtrage des postes pour le fichier "
+                    "de création des ajouts Swile"
+                ),
+                variable=self.addition_filter_expanded[filter_name],
+                command=lambda selected=filter_name: (
+                    self._toggle_addition_filter_section(selected)
+                ),
+            )
+            filter_toggle.pack(anchor="w", pady=(0, 4))
+            self.addition_filter_toggle_controls[filter_name] = filter_toggle
+            self.work_location_mapping_controls.append(filter_toggle)
+            filter_section = self._create_addition_filter_editor(
+                filter_container,
+                filter_name,
+                filter_title,
+            )
+            self.addition_filter_sections[filter_name] = filter_section
         location_values_section = tk.LabelFrame(
-            location_values_tab,
+            location_values_content,
             text="Générer les valeurs de lieu de travail",
             padx=10,
             pady=8,
@@ -468,12 +533,64 @@ class CSEFileManager(TkinterDnD.Tk):
             fg="#555555",
         ).pack(fill="x")
 
-        self._create_work_location_mapping_editor(location_values_tab)
+        self._create_work_location_mapping_editor(location_values_content)
         self._load_work_location_mapping()
         self._load_active_directory_config()
         self._refresh_file_labels()
         self._set_previous_export_section_default_visibility()
         self.after(100, self._position_main_pane_sash)
+
+    def _create_scrollable_tab(self, parent, padx=0, pady=0):
+        """Ajoute un contenu défilant verticalement dans un onglet."""
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+        canvas = tk.Canvas(parent, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(
+            parent,
+            orient="vertical",
+            command=canvas.yview,
+        )
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        content = tk.Frame(canvas, padx=padx, pady=pady)
+        content_window = canvas.create_window(
+            (0, 0), window=content, anchor="nw"
+        )
+        content.bind(
+            "<Configure>",
+            lambda _event: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            ),
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda event: canvas.itemconfigure(
+                content_window, width=event.width
+            ),
+        )
+        self.scrollable_tab_areas[str(content)] = canvas
+        return content
+
+    def _on_tab_mousewheel(self, event):
+        """Fait défiler l’onglet sous le pointeur avec la molette."""
+        widget = self.winfo_containing(event.x_root, event.y_root)
+        while widget is not None:
+            canvas = self.scrollable_tab_areas.get(str(widget))
+            if canvas is not None:
+                if event.num == 4:
+                    scroll_units = -1
+                elif event.num == 5:
+                    scroll_units = 1
+                else:
+                    scroll_units = -1 if event.delta > 0 else 1
+                    if abs(event.delta) >= 120:
+                        scroll_units = -int(event.delta / 120)
+                canvas.yview_scroll(scroll_units, "units")
+                return "break"
+            widget = widget.master
+        return None
 
     def _position_main_pane_sash(self):
         """Place le séparateur initial pour réserver une largeur aux résultats."""
@@ -613,73 +730,6 @@ class CSEFileManager(TkinterDnD.Tk):
             "<<Paste>>", self._mark_work_location_mapping_dirty
         )
 
-        self.addition_filter_rows = {}
-        self.addition_filter_default_values = {}
-        self.addition_filter_default_entries = {}
-        self.addition_filter_rules_frames = {}
-        self.addition_filter_add_buttons = {}
-        self.work_location_mapping_controls = [
-            self.work_location_default_entry,
-        ]
-        for filter_name, filter_title in (
-            ("email", "Filtrage des adresses e-mail"),
-            ("poste", "Filtrage des postes"),
-        ):
-            filter_section = tk.LabelFrame(
-                section,
-                text=filter_title,
-                padx=8,
-                pady=5,
-            )
-            filter_section.pack(fill="x", pady=(0, 6))
-            default_frame = tk.Frame(filter_section)
-            default_frame.pack(fill="x", pady=(0, 4))
-            tk.Label(
-                default_frame,
-                text="Valeur par défaut :",
-                anchor="w",
-            ).pack(side="left")
-            default_value = tk.StringVar(value="inclure")
-            default_entry = ttk.Combobox(
-                default_frame,
-                textvariable=default_value,
-                values=("inclure", "exclure"),
-                state="readonly",
-                width=12,
-            )
-            default_entry.pack(side="left", padx=(6, 0))
-            default_entry.bind(
-                "<<ComboboxSelected>>", self._mark_work_location_mapping_dirty
-            )
-            self.addition_filter_default_values[filter_name] = default_value
-            self.addition_filter_default_entries[filter_name] = default_entry
-            self.work_location_mapping_controls.append(default_entry)
-            header = tk.Frame(filter_section)
-            header.pack(fill="x")
-            header.columnconfigure(0, weight=3)
-            header.columnconfigure(1, weight=1)
-            tk.Label(header, text="Motifs (termes séparés par ;)").grid(
-                row=0, column=0, sticky="w", padx=(0, 6)
-            )
-            tk.Label(header, text="Valeur").grid(row=0, column=1, sticky="w")
-            rules_frame = tk.Frame(filter_section)
-            rules_frame.columnconfigure(0, weight=1)
-            rules_frame.pack(fill="x")
-            self.addition_filter_rows[filter_name] = []
-            self.addition_filter_rules_frames[filter_name] = rules_frame
-            add_button = tk.Button(
-                filter_section,
-                text="＋ Ajouter une règle",
-                command=lambda selected=filter_name: (
-                    self._add_addition_filter_rule(
-                        selected, mark_dirty=True
-                    )
-                ),
-            )
-            add_button.pack(anchor="w", pady=(4, 0))
-            self.addition_filter_add_buttons[filter_name] = add_button
-            self.work_location_mapping_controls.append(add_button)
-
         header = tk.Frame(section)
         header.pack(fill="x")
         header.columnconfigure(0, weight=3)
@@ -730,6 +780,72 @@ class CSEFileManager(TkinterDnD.Tk):
                 self.work_location_reload_button,
             )
         )
+
+    def _create_addition_filter_editor(
+        self, parent, filter_name, filter_title
+    ):
+        """Construit l’éditeur de règles pour un filtre des ajouts."""
+        filter_section = tk.LabelFrame(
+            parent,
+            text=filter_title,
+            padx=8,
+            pady=5,
+        )
+        default_frame = tk.Frame(filter_section)
+        default_frame.pack(fill="x", pady=(0, 4))
+        tk.Label(
+            default_frame,
+            text="Valeur par défaut :",
+            anchor="w",
+        ).pack(side="left")
+        default_value = tk.StringVar(value="inclure")
+        default_entry = ttk.Combobox(
+            default_frame,
+            textvariable=default_value,
+            values=("inclure", "exclure"),
+            state="readonly",
+            width=12,
+        )
+        default_entry.pack(side="left", padx=(6, 0))
+        default_entry.bind(
+            "<<ComboboxSelected>>", self._mark_work_location_mapping_dirty
+        )
+        self.addition_filter_default_values[filter_name] = default_value
+        self.addition_filter_default_entries[filter_name] = default_entry
+        self.work_location_mapping_controls.append(default_entry)
+        header = tk.Frame(filter_section)
+        header.pack(fill="x")
+        header.columnconfigure(0, weight=3)
+        header.columnconfigure(1, weight=1)
+        tk.Label(header, text="Motifs (termes séparés par ;)").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
+        tk.Label(header, text="Valeur").grid(row=0, column=1, sticky="w")
+        rules_frame = tk.Frame(filter_section)
+        rules_frame.columnconfigure(0, weight=1)
+        rules_frame.pack(fill="x")
+        self.addition_filter_rows[filter_name] = []
+        self.addition_filter_rules_frames[filter_name] = rules_frame
+        add_button = tk.Button(
+            filter_section,
+            text="＋ Ajouter une règle",
+            command=lambda selected=filter_name: (
+                self._add_addition_filter_rule(selected, mark_dirty=True)
+            ),
+        )
+        add_button.pack(anchor="w", pady=(4, 0))
+        self.addition_filter_add_buttons[filter_name] = add_button
+        self.work_location_mapping_controls.append(add_button)
+        return filter_section
+
+    def _toggle_addition_filter_section(self, filter_name):
+        """Affiche ou masque un panneau de règles de filtrage des ajouts."""
+        section = self.addition_filter_sections[filter_name]
+        if self.addition_filter_expanded[filter_name].get():
+            if not section.winfo_manager():
+                section.pack(fill="x", pady=(0, 8))
+        else:
+            section.pack_forget()
 
     def _add_work_location_rule(self, pattern="", value="", mark_dirty=False):
         """Ajoute une ligne de mots-clés et sa valeur Swile associée."""
@@ -987,6 +1103,7 @@ class CSEFileManager(TkinterDnD.Tk):
             self.work_location_default_entry,
             *self.addition_filter_default_entries.values(),
             *self.addition_filter_add_buttons.values(),
+            *self.addition_filter_toggle_controls.values(),
             self.work_location_add_button,
             self.work_location_save_button,
             self.work_location_reload_button,
@@ -1000,7 +1117,7 @@ class CSEFileManager(TkinterDnD.Tk):
                 for pattern in rule["patterns"]:
                     self._add_addition_filter_rule(
                         filter_name,
-                        "; ".join(pattern),
+                        ";".join(pattern),
                         rule["value"],
                     )
         for rule in mapping["rules"]:
@@ -1009,6 +1126,11 @@ class CSEFileManager(TkinterDnD.Tk):
                     "; ".join(pattern),
                     rule["value"],
                 )
+        for filter_name, rows in self.addition_filter_rows.items():
+            self.addition_filter_expanded[filter_name].set(
+                filter_name == "poste" and not rows
+            )
+            self._toggle_addition_filter_section(filter_name)
         self.work_location_mapping_dirty = False
         self.work_location_mapping_status.set("Configuration chargée.")
 
@@ -1708,6 +1830,8 @@ class CSEFileManager(TkinterDnD.Tk):
             control.configure(state=state)
         if state == "normal":
             self._refresh_work_location_rule_rows()
+            for filter_name in self.addition_filter_rows:
+                self._refresh_addition_filter_rule_rows(filter_name)
 
     def _set_output(self, text):
         """Remplace le contenu du panneau de résultats."""

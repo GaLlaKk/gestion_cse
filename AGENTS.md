@@ -30,6 +30,8 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   callback de progression à l’interface, qui affiche une barre non bloquante
   basée sur le volume du dernier export valide (ou 500 personnes par défaut)
   et réévalue l’estimation si le volume dépasse la cible.
+  Les contenus des onglets Active Directory et des deux sous-onglets Swile
+  défilent verticalement avec une barre d’ascenseur et la molette.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
 - `.github/workflows/release-gestion-cse.yml` exécute les tests unitaires et
@@ -83,9 +85,10 @@ fichier/traitement pour le flux Swile.
     d’une règle sont alternatifs. Si le fichier est absent, les valeurs
     intégrées restent Courcelles -> `Paris 145`, Wasquehal / avenue de la
     Marne -> `Lille 5.9`, Paris 133 -> `Paris 133`, sinon `Autre`.
-    L’interface de l’onglet « Valeurs de lieu de travail » permet aussi
-    d’éditer les filtres d’ajouts; le fichier partagé conserve mapping et
-    filtres lors de l’enregistrement. L’ancien fichier
+    L’interface de l’onglet « Valeurs de lieu de travail » édite le mapping;
+    les filtres d’ajouts sont dans « Comparer les listes », chacun avec une
+    case pour afficher/masquer sa configuration. Le fichier partagé conserve
+    mapping et filtres lors de l’enregistrement. L’ancien fichier
     `lieux_travail.config.json` est lu en repli pour faciliter la migration.
     Elle permet d’ajouter, supprimer et réordonner les motifs puis
     d’enregistrer le mapping.
