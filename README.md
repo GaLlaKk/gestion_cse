@@ -219,6 +219,8 @@ Pour activer le workflow :
    utilisateur pris en charge par l’API Copilot. Pour un fine-grained personal
    access token, GitHub demande l’accès en lecture aux métadonnées et les accès
    en lecture/écriture aux Actions, contenus, issues et pull requests.
+   L’assignation utilise l’API REST GitHub pour ajouter
+   `copilot-swe-agent[bot]` à l’issue avec la branche par défaut comme base.
 
 Le workflow est volontairement déclenché uniquement par ce label de validation;
 aucune clé OpenAI n’est nécessaire.

@@ -44,8 +44,8 @@ racine sont des points d’entrée conservés pour lancer les traitements.
 - `.github/workflows/copilot-issue-resolver.yml` assigne les issues à Copilot
   coding agent uniquement après l’ajout manuel du label `copilot-ready`.
   L’activation nécessite Copilot coding agent et le secret
-  `COPILOT_ASSIGNMENT_TOKEN`; le token utilisateur sert à l’API GraphQL
-  d’assignation. La pull request proposée par l’agent doit être revue
+  `COPILOT_ASSIGNMENT_TOKEN`; le token utilisateur sert à l’API REST
+  d’assignation de GitHub. La pull request proposée par l’agent doit être revue
   manuellement.
 - `.github/agents/issue-triage.agent.md` contient les consignes du profil de
   triage : `needs-info` pour les issues à clarifier, `triaged` pour les demandes
