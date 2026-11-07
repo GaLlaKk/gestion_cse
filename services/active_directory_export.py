@@ -2,11 +2,12 @@ import csv
 import json
 import logging
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+import time
+from contextlib import contextmanager
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
 from pathlib import Path
 
-import requests
 from msal import PublicClientApplication
 
 from domain.normalization import active_directory_keys
@@ -214,7 +215,10 @@ def _load_resume_state(resume_state_path, logger):
 
 
 MAX_INTERMEDIATE_LEVELS = 2
-MAX_CONCURRENT_REQUESTS = 8
+MAX_CONCURRENT_REQUESTS = 6
+MAX_PHOTO_WORKERS = 4
+BATCH_ACCOUNTS = 10
+RESUME_SAVE_INTERVAL_SECONDS = 5.0
 EXPORT_KEY_TYPES = ("email", "matricule", "name")
 
 
@@ -347,6 +351,7 @@ class ActiveDirectoryCollector:
         self.download_photos = download_photos
         self.on_progress = on_progress
         self.estimated_people = estimated_people
+        self._photo_executor = None
 
     def is_report_domain_email(self, email):
         """Indique si l’adresse appartient au domaine de rapport."""
@@ -369,23 +374,10 @@ class ActiveDirectoryCollector:
         )
         self.on_progress(completed_count, self.estimated_people, "collecting")
 
-    def _fetch_manager_email(self, user_id):
-        """Retourne l’e-mail du responsable, ou None s’il n’existe pas."""
-        response = self.graph.get(
-            f"{GRAPH_BASE_URL}/users/{user_id}/manager?$select=mail"
-        )
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        return response.json().get("mail")
-
-    def _fetch_direct_reports(self, user_id):
-        """Retourne tous les rapports directs d’un compte (pagination incluse)."""
-        url = (
-            f"{GRAPH_BASE_URL}/users/{user_id}/directReports"
-            "?$select=id,mail,displayName"
-        )
-        reports = []
+    def _fetch_remaining_direct_reports(self, page):
+        """Complète une première page de rapports directs (pagination)."""
+        reports = list(page.get("value", []))
+        url = page.get("@odata.nextLink")
         while url:
             response = self.graph.get(url)
             response.raise_for_status()
@@ -394,25 +386,59 @@ class ActiveDirectoryCollector:
             url = page.get("@odata.nextLink")
         return reports
 
-    def fetch_user_record(self, user_id_or_email):
-        """Récupère un compte, son responsable et ses rapports directs."""
-        user_response = self.graph.get(
-            f"{GRAPH_BASE_URL}/users/{user_id_or_email}"
-            "?$select=id,displayName,mail,userPrincipalName,"
-            "jobTitle,department,officeLocation"
-        )
-        if user_response.status_code == 404:
-            return None
-        user_response.raise_for_status()
-        user_info = user_response.json()
+    def fetch_user_records(self, identifiers, with_direct_reports=True):
+        """Récupère des comptes, leur responsable et leurs rapports directs.
+
+        Les requêtes (compte avec responsable en `$expand`, rapports directs)
+        sont regroupées dans des appels `$batch`. Retourne une liste alignée sur
+        `identifiers`, avec None pour un compte introuvable.
+        """
+        urls = []
+        for identifier in identifiers:
+            urls.append(
+                f"/users/{identifier}"
+                "?$select=id,displayName,mail,userPrincipalName,"
+                "jobTitle,department,officeLocation"
+                "&$expand=manager($select=mail)"
+            )
+            if with_direct_reports:
+                urls.append(
+                    f"/users/{identifier}/directReports"
+                    "?$select=id,mail,displayName"
+                )
+        responses = self.graph.batch_get(urls)
+        stride = 2 if with_direct_reports else 1
+
+        records = []
+        for position, identifier in enumerate(identifiers):
+            user_response = responses[stride * position]
+            if user_response.status_code == 404:
+                records.append(None)
+                continue
+            user_response.raise_for_status()
+            direct_reports = []
+            if with_direct_reports:
+                reports_response = responses[stride * position + 1]
+                reports_response.raise_for_status()
+                direct_reports = self._fetch_remaining_direct_reports(
+                    reports_response.json()
+                )
+            records.append(
+                self._build_user_record(
+                    identifier, user_response.json(), direct_reports
+                )
+            )
+        return records
+
+    def _build_user_record(self, identifier, user_info, direct_reports_data):
+        """Assemble l’entrée d’un compte à partir des réponses Graph."""
         user_id = user_info["id"]
         email = user_info.get("mail")
         is_epsilon_user = self.is_report_domain_email(email)
 
         manager_email = None
-        if is_epsilon_user or user_id_or_email == self.start_user_email:
-            manager_email = self._fetch_manager_email(user_id)
-        direct_reports_data = self._fetch_direct_reports(user_id)
+        if is_epsilon_user or identifier == self.start_user_email:
+            manager_email = (user_info.get("manager") or {}).get("mail")
 
         user_principal_name = user_info.get("userPrincipalName")
         user_entry = {
@@ -447,21 +473,35 @@ class ActiveDirectoryCollector:
         }
         return user_entry, direct_reports_data, is_epsilon_user
 
-    def _export_user(self, writer, user_entry, keys_by_type):
-        """Récupère la photo si demandée, puis écrit la ligne du compte."""
-        if self.download_photos:
+    @contextmanager
+    def photo_downloads(self):
+        """Active le téléchargement parallèle des photos et attend sa fin."""
+        with ThreadPoolExecutor(max_workers=MAX_PHOTO_WORKERS) as executor:
+            self._photo_executor = executor
             try:
-                _download_user_photo(
-                    user_entry["id"],
-                    user_entry["identity"]["username"],
-                    self.output_dir / "photos",
-                    self.graph.get,
-                )
-            except requests.HTTPError:
-                self.logger.exception(
-                    "Impossible de récupérer la photo du compte %s.",
-                    _account_reference(user_entry),
-                )
+                yield
+            finally:
+                self._photo_executor = None
+
+    def _download_photo(self, user_entry):
+        """Télécharge la photo d’un compte ; une erreur n’interrompt pas l’export."""
+        try:
+            _download_user_photo(
+                user_entry["id"],
+                user_entry["identity"]["username"],
+                self.output_dir / "photos",
+                self.graph.get,
+            )
+        except Exception:
+            self.logger.exception(
+                "Impossible de récupérer la photo du compte %s.",
+                _account_reference(user_entry),
+            )
+
+    def _export_user(self, writer, user_entry, keys_by_type):
+        """Planifie la photo si demandée, puis écrit la ligne du compte."""
+        if self.download_photos and self._photo_executor is not None:
+            self._photo_executor.submit(self._download_photo, user_entry)
         row = _csv_row_from_user_entry(user_entry)
         writer.writerow([row[column] for column in CSV_HEADERS])
         _add_exported_keys(keys_by_type, row)
@@ -511,46 +551,111 @@ class ActiveDirectoryCollector:
             ):
                 next_pending[report_id] = next_levels
 
-    def collect_hierarchy(self, writer, state, resume_state_path):
-        """Parcourt la hiérarchie par niveaux et sauvegarde l’état de reprise."""
+    def collect_hierarchy(self, writer, state, resume_state_path, flush=None):
+        """Parcourt la hiérarchie en flux continu et sauvegarde l’état de reprise.
+
+        Les comptes en attente sont regroupés en lots traités en parallèle ; dès
+        qu’un lot se termine, ses rapports directs alimentent la file sans
+        attendre la fin d’un niveau. Les photos sont téléchargées en parallèle.
+        """
+        waiting = {
+            identifier: (is_root, levels)
+            for identifier, is_root, levels in state.pending
+        }
+        inflight = {}
+        inflight_ids = set()
+
+        def snapshot_pending():
+            in_progress = [item for chunk in inflight.values() for item in chunk]
+            return in_progress + [
+                (identifier, is_root, levels)
+                for identifier, (is_root, levels) in waiting.items()
+            ]
+
+        def save_state():
+            if flush is not None:
+                flush()
+            state.pending = snapshot_pending()
+            _save_resume_state(resume_state_path, state.to_resume_dict())
+
+        last_save = time.monotonic()
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS) as executor:
-            while state.pending:
-                batch = state.pending
-                results = executor.map(
-                    self.fetch_user_record,
-                    (item[0] for item in batch),
-                )
-                next_pending = {}
-
-                for (user_id_or_email, is_root, intermediate_levels), result in zip(
-                    batch, results
-                ):
-                    if result is None:
-                        self.logger.warning(
-                            "Compte %s introuvable dans Microsoft Graph.",
-                            user_id_or_email,
+            try:
+                while waiting or inflight:
+                    free_slots = MAX_CONCURRENT_REQUESTS - len(inflight)
+                    while waiting and free_slots > 0:
+                        size = max(
+                            1,
+                            min(BATCH_ACCOUNTS, -(-len(waiting) // free_slots)),
                         )
-                        continue
-                    self._process_account(
-                        writer,
-                        state,
-                        result,
-                        is_root,
-                        intermediate_levels,
-                        next_pending,
-                    )
+                        chunk = [
+                            (identifier, *waiting.pop(identifier))
+                            for identifier in list(waiting)[:size]
+                        ]
+                        future = executor.submit(
+                            self.fetch_user_records,
+                            [item[0] for item in chunk],
+                        )
+                        inflight[future] = chunk
+                        inflight_ids.update(item[0] for item in chunk)
+                        free_slots -= 1
 
-                state.pending = [
-                    (report_id, False, levels)
-                    for report_id, levels in next_pending.items()
-                ]
-                _save_resume_state(resume_state_path, state.to_resume_dict())
+                    done, _ = wait(inflight, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        results = future.result()
+                        chunk = inflight.pop(future)
+                        inflight_ids.difference_update(item[0] for item in chunk)
+                        self._process_chunk(
+                            writer, state, chunk, results, waiting, inflight_ids
+                        )
+
+                    if (
+                        time.monotonic() - last_save
+                        >= RESUME_SAVE_INTERVAL_SECONDS
+                    ):
+                        save_state()
+                        last_save = time.monotonic()
+            except BaseException:
+                for future in inflight:
+                    future.cancel()
+                save_state()
+                raise
+        save_state()
 
         self.logger.info(
             "Collecte terminée : %s comptes examinés, %s personnes retenues.",
             len(state.processed_ids),
             state.exported_count,
         )
+
+    def _process_chunk(
+        self, writer, state, chunk, results, waiting, inflight_ids
+    ):
+        """Traite les comptes d’un lot et met leurs rapports directs en attente."""
+        discovered = {}
+        for (user_id_or_email, is_root, intermediate_levels), result in zip(
+            chunk, results
+        ):
+            if result is None:
+                self.logger.warning(
+                    "Compte %s introuvable dans Microsoft Graph.",
+                    user_id_or_email,
+                )
+                continue
+            self._process_account(
+                writer,
+                state,
+                result,
+                is_root,
+                intermediate_levels,
+                discovered,
+            )
+        for report_id, levels in discovered.items():
+            if report_id in inflight_ids:
+                continue
+            previous = waiting.get(report_id)
+            if previous is None or levels < previous[1]:
+                waiting[report_id] = (False, levels)
 
     def _missing_previous_rows(self, previous_export_path, keys_by_type):
         """Retourne les lignes de l’export précédent absentes de l’export courant."""
@@ -589,6 +694,7 @@ class ActiveDirectoryCollector:
 
         appended_count = 0
         visible_count = 0
+        candidates = []
         checked_users = set()
         for previous_row in self._missing_previous_rows(
             previous_export_path, state.keys_by_type
@@ -602,27 +708,39 @@ class ActiveDirectoryCollector:
             if candidate_key in checked_users:
                 continue
             checked_users.add(candidate_key)
+            candidates.append(candidate)
 
-            result = self.fetch_user_record(candidate)
-            if result is None:
-                continue
-            user_entry, _direct_reports_data, is_epsilon_user = result
-            email = user_entry["identity"]["email"]
-            is_start_user = (email or "").casefold() == (
-                self.start_user_email.casefold()
+        chunks = [
+            candidates[start : start + BATCH_ACCOUNTS]
+            for start in range(0, len(candidates), BATCH_ACCOUNTS)
+        ]
+        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS) as executor:
+            fetched = executor.map(
+                lambda chunk: self.fetch_user_records(
+                    chunk, with_direct_reports=False
+                ),
+                chunks,
             )
-            if not (
-                is_epsilon_user or is_start_user
-            ) or self.is_external_email(email):
-                continue
+            for result in (item for batch in fetched for item in batch):
+                if result is None:
+                    continue
+                user_entry, _direct_reports_data, is_epsilon_user = result
+                email = user_entry["identity"]["email"]
+                is_start_user = (email or "").casefold() == (
+                    self.start_user_email.casefold()
+                )
+                if not (
+                    is_epsilon_user or is_start_user
+                ) or self.is_external_email(email):
+                    continue
 
-            visible_count += 1
-            row = _csv_row_from_user_entry(user_entry)
-            if _has_exported_key(state.keys_by_type, row):
-                continue
-            self._export_user(writer, user_entry, state.keys_by_type)
-            appended_count += 1
-            self.report_progress(state.exported_count + appended_count)
+                visible_count += 1
+                row = _csv_row_from_user_entry(user_entry)
+                if _has_exported_key(state.keys_by_type, row):
+                    continue
+                self._export_user(writer, user_entry, state.keys_by_type)
+                appended_count += 1
+                self.report_progress(state.exported_count + appended_count)
 
         self.logger.info(
             "Comparaison export précédent : %s compte(s) encore visible(s), "
@@ -752,10 +870,16 @@ def run_active_directory_export(
             "a", newline="", encoding="utf-8"
         ) as output_stream:
             writer = csv.writer(output_stream)
-            collector.collect_hierarchy(writer, state, resume_state_path)
-            appended_from_previous = collector.append_previous_users(
-                writer, state, previous_export_path
-            )
+            with collector.photo_downloads():
+                collector.collect_hierarchy(
+                    writer,
+                    state,
+                    resume_state_path,
+                    flush=output_stream.flush,
+                )
+                appended_from_previous = collector.append_previous_users(
+                    writer, state, previous_export_path
+                )
 
         if state.exported_count + appended_from_previous:
             state.temporary_path.replace(csv_path)
