@@ -7,6 +7,30 @@ from unittest.mock import Mock, patch
 import requests
 
 from services import active_directory_export
+from services.graph_client import GRAPH_BASE_URL
+
+
+def batch_post(request_graph):
+    """Simule `POST /$batch` en rejouant chaque sous-requête sur `request_graph`."""
+
+    def post(url, json=None, **_kwargs):
+        responses = []
+        for item in json["requests"]:
+            inner = request_graph(GRAPH_BASE_URL + item["url"])
+            responses.append(
+                {
+                    "id": item["id"],
+                    "status": inner.status_code,
+                    "headers": {},
+                    "body": inner.json.return_value,
+                }
+            )
+        outer = Mock(status_code=200)
+        outer.json.return_value = {"responses": responses}
+        outer.raise_for_status.return_value = None
+        return outer
+
+    return post
 
 
 class ActiveDirectoryExportTests(unittest.TestCase):
@@ -272,7 +296,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     )
                 if "/users/root-id/manager" in url:
                     return graph_response(status_code=404)
-                if "/users/root-id/directReports" in url:
+                if "/users/start@example.com/directReports" in url:
                     self.assertFalse(final_path.exists())
                     self.assertEqual(
                         len(list(output_directory.glob("*.tmp"))), 1
@@ -297,9 +321,12 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return_value=client,
                 ),
                 patch.object(
-                    active_directory_export.requests,
-                    "get",
-                    side_effect=request_graph,
+                    requests.Session, "get", side_effect=request_graph
+                ),
+                patch.object(
+                    requests.Session,
+                    "post",
+                    side_effect=batch_post(request_graph),
                 ),
             ):
                 result_path = active_directory_export.run_active_directory_export(
@@ -328,6 +355,102 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     (1, 500, "complete"),
                 ],
             )
+
+    def test_export_downloads_photos_in_parallel_without_failing_on_error(self):
+        """Vérifie que les photos sont téléchargées et qu’une erreur reste non bloquante."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            config_path = root / "config.json"
+            config_path.write_text(
+                (
+                    '{"start_user_email":"start@example.com",'
+                    '"client_id":"client-id","authority":"authority",'
+                    '"report_domain":"example.com","scopes":["scope"]}'
+                ),
+                encoding="utf-8",
+            )
+            output_directory = root / "out"
+            output_directory.mkdir()
+            client = Mock()
+            client.initiate_device_flow.return_value = {
+                "user_code": "ABCD1234",
+                "message": "Sign in",
+            }
+            client.acquire_token_by_device_flow.return_value = {
+                "access_token": "token"
+            }
+            logger = Mock()
+
+            def graph_response(status_code=200, payload=None, content=b""):
+                response = Mock(status_code=status_code, content=content)
+                response.json.return_value = payload
+                response.raise_for_status.return_value = None
+                return response
+
+            def user(identifier, mail):
+                return {
+                    "id": identifier,
+                    "displayName": identifier,
+                    "mail": mail,
+                    "userPrincipalName": mail,
+                }
+
+            def request_graph(url, **_kwargs):
+                if "/users/start@example.com?" in url:
+                    return graph_response(payload=user("root-id", "start@example.com"))
+                if "/directReports" in url and "start@example.com" in url:
+                    return graph_response(
+                        payload={
+                            "value": [
+                                {"id": "child-id", "mail": "child@example.com"}
+                            ]
+                        }
+                    )
+                if "/users/child-id?" in url:
+                    return graph_response(payload=user("child-id", "child@example.com"))
+                if "/directReports" in url:
+                    return graph_response(payload={"value": []})
+                if "/users/root-id/photo/$value" in url:
+                    return graph_response(content=b"jpg")
+                if "/users/child-id/photo/$value" in url:
+                    raise requests.ConnectionError("coupure photo")
+                self.fail(f"URL Graph inattendue : {url}")
+
+            with (
+                patch.object(
+                    active_directory_export,
+                    "get_config_path",
+                    return_value=config_path,
+                ),
+                patch.object(
+                    active_directory_export,
+                    "initialize_output",
+                    return_value=(logger, output_directory, "20261028"),
+                ),
+                patch.object(
+                    active_directory_export,
+                    "PublicClientApplication",
+                    return_value=client,
+                ),
+                patch.object(
+                    requests.Session, "get", side_effect=request_graph
+                ),
+                patch.object(
+                    requests.Session,
+                    "post",
+                    side_effect=batch_post(request_graph),
+                ),
+                patch("services.graph_client.time.sleep"),
+            ):
+                result_path = active_directory_export.run_active_directory_export(
+                    download_photos=True
+                )
+
+            self.assertIsNotNone(result_path)
+            self.assertTrue(
+                (output_directory / "photos" / "start_root-id.jpg").is_file()
+            )
+            logger.exception.assert_called()
 
     def test_export_does_not_publish_csv_when_no_users_are_exported(self):
         """Vérifie qu’aucun CSV d’en-tête seul n’est publié."""
@@ -372,7 +495,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     )
                 if "/users/root-id/manager" in url:
                     return graph_response(status_code=404)
-                if "/users/root-id/directReports" in url:
+                if "/users/start@example.com/directReports" in url:
                     return graph_response(payload={"value": []})
                 self.fail(f"URL Graph inattendue : {url}")
 
@@ -393,9 +516,12 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return_value=client,
                 ),
                 patch.object(
-                    active_directory_export.requests,
-                    "get",
-                    side_effect=request_graph,
+                    requests.Session, "get", side_effect=request_graph
+                ),
+                patch.object(
+                    requests.Session,
+                    "post",
+                    side_effect=batch_post(request_graph),
                 ),
             ):
                 result_path = active_directory_export.run_active_directory_export()
@@ -463,7 +589,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     )
                 if "/users/root-id/manager" in url:
                     return graph_response(status_code=404)
-                if "/users/root-id/directReports" in url:
+                if "/users/start@example.com/directReports" in url:
                     return graph_response(
                         payload={
                             "value": [
@@ -514,9 +640,12 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return_value=client,
                 ),
                 patch.object(
-                    active_directory_export.requests,
-                    "get",
-                    side_effect=request_graph,
+                    requests.Session, "get", side_effect=request_graph
+                ),
+                patch.object(
+                    requests.Session,
+                    "post",
+                    side_effect=batch_post(request_graph),
                 ),
                 patch("services.graph_client.time.sleep"),
             ):
@@ -615,7 +744,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     )
                 if "/users/root-id/manager" in url:
                     return graph_response(status_code=404)
-                if "/users/root-id/directReports" in url:
+                if "/users/start@example.com/directReports" in url:
                     return graph_response(payload={"value": []})
                 if "/users/legacy@example.com?" in url:
                     return graph_response(
@@ -652,9 +781,12 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return_value=client,
                 ),
                 patch.object(
-                    active_directory_export.requests,
-                    "get",
-                    side_effect=request_graph,
+                    requests.Session, "get", side_effect=request_graph
+                ),
+                patch.object(
+                    requests.Session,
+                    "post",
+                    side_effect=batch_post(request_graph),
                 ),
             ):
                 result_path = active_directory_export.run_active_directory_export(
@@ -743,7 +875,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     )
                 if "/users/root-id/manager" in url:
                     return graph_response(status_code=404)
-                if "/users/root-id/directReports" in url:
+                if "/users/start@example.com/directReports" in url:
                     return graph_response(payload={"value": []})
                 if "/users/deleted@example.com?" in url:
                     return graph_response(status_code=404)
@@ -766,9 +898,12 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return_value=client,
                 ),
                 patch.object(
-                    active_directory_export.requests,
-                    "get",
-                    side_effect=request_graph,
+                    requests.Session, "get", side_effect=request_graph
+                ),
+                patch.object(
+                    requests.Session,
+                    "post",
+                    side_effect=batch_post(request_graph),
                 ),
             ):
                 result_path = active_directory_export.run_active_directory_export(

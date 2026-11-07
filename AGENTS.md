@@ -44,6 +44,13 @@ racine sont des points d’entrée conservés pour lancer les traitements.
   `services/graph_client.py` le client Graph (nouvelles tentatives, 429) et
   `services/atomic_files.py` l’écriture atomique (`atomic_write`) partagée.
   `run_active_directory_export` délègue à `ActiveDirectoryCollector`.
+  `GraphClient` réutilise une `requests.Session`, suspend toutes les requêtes
+  pendant un 429 (backoff partagé) et fournit `batch_get` (`$batch`, 20
+  sous-requêtes max, relance des 429/503/504). La collecte traite des lots de
+  comptes (compte avec `$expand=manager`, `directReports`) en flux continu
+  sans barrière par niveau; les photos sont téléchargées en parallèle et leurs
+  erreurs sont journalisées sans interrompre l’export. Dans les tests, patcher
+  `requests.Session.get` et `requests.Session.post` (voir `batch_post`).
 - `services/version.py` vaut `dev` en local; le workflow CD le remplace par le
   tag avant le build. La version apparaît dans le titre de la fenêtre, le nom
   des archives (`GestionCSE-vX.Y.Z-<plateforme>-<arch>.zip`) et
