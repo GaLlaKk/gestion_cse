@@ -73,6 +73,18 @@ jobs:
           --windowed
           --name GestionCSE
           --collect-all tkinterdnd2
+          --exclude-module unittest
+          --exclude-module pydoc
+          --exclude-module doctest
+          --exclude-module numpy
+          --exclude-module pandas
+          --exclude-module matplotlib
+          --exclude-module PIL
+          --exclude-module pytest
+          --exclude-module setuptools
+          --exclude-module pip
+          --exclude-module test
+          --exclude-module distutils
           --add-data
           "swile_active_directory/in/collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv${{ matrix.data_separator }}swile_active_directory/in"
           cse_desktop_app.py
