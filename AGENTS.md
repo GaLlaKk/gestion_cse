@@ -111,7 +111,9 @@ fichier/traitement pour le flux Swile.
     (`Prénom`, `Nom de famille`, `E-mail`, `Matricule`, `Valeur`) ; les
     personnes incluses sont les Swile trouvées dans Active Directory et les
     ajouts admissibles selon les filtres configurés; leur valeur est déduite
-    du `Lieu de travail` dans l’export Active Directory.
+    du `Lieu de travail` dans l’export Active Directory. Le fichier généré est
+    nommé `collaborators-lieu-travail-YYYYMMDDtHHMMSS.csv` avec l’heure locale
+    de génération.
   - Le mapping de lieu est lu depuis `swile.config.json` à la racine du
     projet. Les règles sont
     évaluées dans l’ordre; les termes d’un motif sont tous requis et les motifs

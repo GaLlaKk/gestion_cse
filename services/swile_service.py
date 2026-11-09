@@ -1,7 +1,7 @@
 import csv
 import copy
 import json
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 from domain.normalization import (
@@ -122,7 +122,7 @@ def _location_values_summary(
     """Génère les valeurs de lieu et retourne les lignes de résumé."""
     location_values_output_path = output_path or (
         output_directory
-        / f"collaborators-attribute-values-{date.today():%Y%m%dt%H%M%S}.csv"
+        / f"collaborators-lieu-travail-{datetime.now():%Y%m%dt%H%M%S}.csv"
     )
     (
         generated_path,
