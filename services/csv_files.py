@@ -14,6 +14,7 @@ def latest_input_file(input_directory, pattern, description):
             path
             for path in candidates
             if not path.stem.startswith("collaborators-additions")
+            and not path.stem.startswith("collaborators-disables-")
             and not path.stem.endswith(("-trouves", "-non-trouves"))
             and path.name != DEFAULT_TEMPLATE_FILE
         ]
