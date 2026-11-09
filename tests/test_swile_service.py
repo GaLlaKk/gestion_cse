@@ -2,6 +2,7 @@ import csv
 import json
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,6 +10,7 @@ from services.swile_service import (
     compare_users,
     generate_additions,
     generate_work_location_values,
+    execute_swile_action,
     load_addition_filters,
     load_work_location_mapping,
     map_work_location_value,
@@ -66,6 +68,26 @@ class SwileServiceTests(unittest.TestCase):
     def tearDown(self):
         """Supprime le dossier temporaire créé pour le test."""
         self.temporary_directory.cleanup()
+
+    def test_location_values_output_uses_current_timestamp_and_filename(self):
+        """Vérifie le nom horodaté des exports de lieu de travail."""
+        with patch("services.swile_service.datetime") as mocked_datetime:
+            mocked_datetime.now.return_value = datetime(
+                2026, 11, 9, 20, 36, 58
+            )
+            result = execute_swile_action(
+                "location_values",
+                self.swile_path,
+                self.active_directory_path,
+                output_directory=self.output_directory,
+            )
+
+        expected_path = (
+            self.output_directory
+            / "collaborators-lieu-travail-20261109t203658.csv"
+        )
+        self.assertTrue(expected_path.exists())
+        self.assertIn(str(expected_path), result)
 
     def _write_csv(self, name, fieldnames, rows, delimiter):
         """Écrit un CSV de test dans le dossier d’entrée temporaire."""
