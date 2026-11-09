@@ -122,7 +122,7 @@ def _location_values_summary(
     """Génère les valeurs de lieu et retourne les lignes de résumé."""
     location_values_output_path = output_path or (
         output_directory
-        / f"collaborators-lieu-travail-{datetime.now():%Y%m%dt%H%M%S}.csv"
+        / f"collaborators-site-rattachement-{datetime.now():%Y%m%dt%H%M%S}.csv"
     )
     (
         generated_path,

@@ -114,7 +114,7 @@ fichier/traitement pour le flux Swile.
     personnes incluses sont les Swile trouvées dans Active Directory et les
     ajouts admissibles selon les filtres configurés; leur valeur est déduite
     du `Lieu de travail` dans l’export Active Directory. Le fichier généré est
-    nommé `collaborators-lieu-travail-YYYYMMDDtHHMMSS.csv` avec l’heure locale
+    nommé `collaborators-site-rattachement-YYYYMMDDtHHMMSS.csv` avec l’heure locale
     de génération.
   - Le mapping de lieu est lu depuis `swile.config.json` à la racine du
     projet. Les règles sont
