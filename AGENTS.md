@@ -7,11 +7,12 @@ de secrets, de données personnelles ni de détails propres à une exécution.
 
 ## Vue d’ensemble
 
-Le dépôt regroupe plusieurs outils, dont `paiements`, `swile` et `validation`.
-Le projet CSE suivi par Git est actuellement à la racine du dépôt, avec les
-répertoires `swile_active_directory`, `liste_salarie_active_directory`, `debug`,
-`log`, et les packages `app`, `domain` et `services`. Les scripts Python à la
-racine sont des points d’entrée conservés pour lancer les traitements.
+Le projet Gestion CSE est le projet suivi par Git à la racine du dépôt. Il
+comprend les packages `app`, `domain` et `services`, ainsi que les répertoires
+`swile_active_directory` et `debug`; les scripts Python à la racine sont des
+points d’entrée conservés pour lancer les traitements. Les répertoires
+`liste_salarie_active_directory` et `log` accueillent des fichiers générés et
+sont créés à l’exécution.
 
 - `services/active_directory_export.py` récupère les informations Microsoft
   Graph et génère l’export CSV; `liste_salarie_active_directory.py` est son
