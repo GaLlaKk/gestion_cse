@@ -98,7 +98,9 @@ fichier/traitement pour le flux Swile.
   - Le rapprochement inclut `Swile.Matricule` avec
     `Active Directory.Identifiant`, après normalisation.
   - `compare_users` compare des lignes en mémoire; l’écriture des résultats est
-    prise en charge par `services/swile_service.py`.
+    prise en charge par `services/swile_service.py`. Le CSV des trouvés garde le
+    nom source suivi de `-trouves.csv`; celui des absents s’appelle
+    `collaborators-disable-YYYYMMDDtHHMMSS.csv`.
 - `domain/swile_additions.py`
   - `build_additions` applique les règles métier en mémoire; le service écrit
     les fichiers d’ajouts et d’ajouts ignorés.

@@ -403,13 +403,21 @@ class SwileServiceTests(unittest.TestCase):
 
     def test_compare_users_writes_found_and_missing_csvs(self):
         """Vérifie l’écriture des résultats de comparaison dans deux CSV."""
-        found_path, missing_path, found_count, missing_count = compare_users(
-            self.swile_path,
-            self.active_directory_path,
-            self.output_directory,
-        )
+        with patch("services.swile_service.datetime") as mocked_datetime:
+            mocked_datetime.now.return_value = datetime(
+                2026, 11, 9, 20, 36, 35
+            )
+            found_path, missing_path, found_count, missing_count = compare_users(
+                self.swile_path,
+                self.active_directory_path,
+                self.output_directory,
+            )
 
         self.assertEqual((found_count, missing_count), (1, 1))
+        self.assertEqual(found_path.name, "swile-trouves.csv")
+        self.assertEqual(
+            missing_path.name, "collaborators-disable-20261109t203635.csv"
+        )
         with found_path.open(encoding="utf-8-sig", newline="") as stream:
             found_rows = list(csv.DictReader(stream, delimiter=";"))
         with missing_path.open(encoding="utf-8-sig", newline="") as stream:

@@ -204,7 +204,9 @@ def compare_users(swile_path, active_directory_path, output_directory):
 
     output_directory.mkdir(parents=True, exist_ok=True)
     found_path = output_directory / f"{swile_path.stem}-trouves.csv"
-    not_found_path = output_directory / f"{swile_path.stem}-non-trouves.csv"
+    not_found_path = output_directory / (
+        f"collaborators-disable-{datetime.now():%Y%m%dt%H%M%S}.csv"
+    )
 
     for output_path, users in (
         (found_path, found_users),
