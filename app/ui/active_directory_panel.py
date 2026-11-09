@@ -197,7 +197,10 @@ class ActiveDirectoryPanelMixin:
             return
         config_path = get_config_path()
         try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
+            try:
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                config = {}
             if not isinstance(config, dict):
                 raise ValueError(
                     "La configuration doit contenir un objet JSON."
