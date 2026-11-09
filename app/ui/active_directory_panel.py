@@ -196,8 +196,13 @@ class ActiveDirectoryPanelMixin:
         ):
             return
         config_path = get_config_path()
+        config_missing = False
         try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
+            try:
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                config = {}
+                config_missing = True
             if not isinstance(config, dict):
                 raise ValueError(
                     "La configuration doit contenir un objet JSON."
@@ -219,8 +224,13 @@ class ActiveDirectoryPanelMixin:
             try:
                 validate_config(config, config_path)
             except ValueError as error:
+                status = (
+                    "Configuration à renseigner"
+                    if config_missing
+                    else "Configuration à compléter"
+                )
                 self.active_directory_config_status.set(
-                    f"Configuration à compléter : {error}"
+                    f"{status} : {error}"
                 )
                 self.active_directory_config_expanded.set(True)
             else:
