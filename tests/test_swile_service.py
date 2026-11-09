@@ -84,7 +84,7 @@ class SwileServiceTests(unittest.TestCase):
 
         expected_path = (
             self.output_directory
-            / "collaborators-lieu-travail-20261109t203658.csv"
+            / "collaborators-site-rattachement-20261109t203658.csv"
         )
         self.assertTrue(expected_path.exists())
         self.assertIn(str(expected_path), result)
