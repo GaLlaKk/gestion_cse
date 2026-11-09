@@ -416,7 +416,7 @@ class SwileServiceTests(unittest.TestCase):
         self.assertEqual((found_count, missing_count), (1, 1))
         self.assertEqual(found_path.name, "swile-trouves.csv")
         self.assertEqual(
-            missing_path.name, "collaborators-disable-20261109t203635.csv"
+            missing_path.name, "collaborators-disables-20261109t203635.csv"
         )
         with found_path.open(encoding="utf-8-sig", newline="") as stream:
             found_rows = list(csv.DictReader(stream, delimiter=";"))

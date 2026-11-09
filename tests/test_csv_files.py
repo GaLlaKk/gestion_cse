@@ -35,7 +35,7 @@ class CsvFilesTests(unittest.TestCase):
                 "collaborators-old.csv",
                 "collaborators-new.csv",
                 "collaborators-new-trouves.csv",
-                "collaborators-disable-20261026t120000.csv",
+                "collaborators-disables-20261026t120000.csv",
                 "collaborators-additions-20261026.csv",
                 "collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv",
             )
