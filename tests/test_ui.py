@@ -116,7 +116,7 @@ class DesktopAppTests(unittest.TestCase):
         app = self.create_app()
         self.assertTrue(app.active_directory_config_expanded.get())
         self.assertIn(
-            "à compléter", app.active_directory_config_status.get()
+            "à renseigner", app.active_directory_config_status.get()
         )
 
     def test_valid_active_directory_config_is_collapsed(self):
