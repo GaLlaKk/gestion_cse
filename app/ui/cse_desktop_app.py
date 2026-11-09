@@ -766,6 +766,12 @@ class CSEFileManager(SwileConfigEditorMixin, ActiveDirectoryPanelMixin, TkinterD
         self._set_config_controls_state("normal")
         if self.progress_bar.cget("mode") == "indeterminate":
             self.progress_bar.stop()
+        if completed_action == "active_directory" and returncode == 0:
+            self._update_active_directory_progress(
+                self.progress_count,
+                int(float(self.progress_bar.cget("maximum"))),
+                "complete",
+            )
         if self.current_action == "active_directory" and returncode != 0:
             self.progress_label.set(
                 "Collecte interrompue après "

@@ -175,6 +175,29 @@ class DesktopAppTests(unittest.TestCase):
         )
         self.assertIn("120", app.progress_label.get())
 
+    def test_successful_active_directory_run_fills_progress_bar_on_finish(self):
+        """Vérifie que la fin réussie fige la barre à son maximum."""
+        app = self.create_app()
+        app.current_action = "active_directory"
+        app.progress_count = 50
+        app.progress_bar.configure(mode="determinate", maximum=200, value=50)
+
+        with (
+            patch.object(app, "_set_run_buttons_state"),
+            patch.object(app, "_set_config_controls_state"),
+            patch.object(app, "_set_output"),
+            patch.object(app, "_refresh_file_labels"),
+            patch.object(app, "_set_previous_export_section_default_visibility"),
+        ):
+            app._finish_run("", "", 0)
+
+        self.assertEqual(str(app.progress_bar.cget("mode")), "determinate")
+        self.assertEqual(
+            float(app.progress_bar.cget("value")),
+            float(app.progress_bar.cget("maximum")),
+        )
+        self.assertIn("Collecte terminée", app.progress_label.get())
+
 
 if __name__ == "__main__":
     unittest.main()
