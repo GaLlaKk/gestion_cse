@@ -10,15 +10,26 @@ from pathlib import Path
 
 from msal import PublicClientApplication
 
-from domain.normalization import active_directory_keys
 from services.active_directory_config import (
     apply_config_defaults,
     get_config_path,
     validate_config,
 )
-from services.atomic_files import atomic_write
+from services.ad_photos import download_user_photo as _download_user_photo
+from services.ad_progress import (
+    DEFAULT_ESTIMATED_PEOPLE,
+    estimate_previous_export_count,
+    next_progress_estimate,
+)
+from services.ad_state import (
+    ExportState as _ExportState,
+    add_exported_keys as _add_exported_keys,
+    has_exported_key as _has_exported_key,
+    restore_resume_state as _restore_resume_state,
+    save_resume_state as _save_resume_state,
+)
 from services.csv_files import read_csv
-from services.graph_client import GRAPH_BASE_URL, GraphClient
+from services.graph_client import GraphClient
 
 CSV_HEADERS = (
     "Nom",
@@ -30,48 +41,7 @@ CSV_HEADERS = (
     "Manager Email",
     "Collaborateurs à charge",
 )
-DEFAULT_ESTIMATED_PEOPLE = 500
-PROGRESS_EXPORT_COLUMNS = {"Nom", "Email", "Identifiant", "Poste"}
 RESUME_STATE_FILENAME = ".liste_salarie_active_directory.resume.json"
-
-
-def estimate_previous_export_count(output_dir):
-    """Estime le volume de la collecte d’après le dernier export valide."""
-    logger = logging.getLogger(__name__)
-    previous_exports = sorted(
-        Path(output_dir).glob("*_liste_salarie_active_directory.csv"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    for previous_export in previous_exports:
-        try:
-            _, rows = read_csv(
-                previous_export,
-                ",",
-                PROGRESS_EXPORT_COLUMNS,
-            )
-        except (OSError, UnicodeError, ValueError) as error:
-            logger.warning(
-                "Impossible d’utiliser %s pour estimer la progression : %s",
-                previous_export,
-                error,
-            )
-            continue
-        if rows:
-            return len(rows)
-    logger.info(
-        "Aucun export précédent exploitable pour l’estimation; "
-        "utilisation de la valeur par défaut de %s personnes.",
-        DEFAULT_ESTIMATED_PEOPLE,
-    )
-    return DEFAULT_ESTIMATED_PEOPLE
-
-
-def next_progress_estimate(current_estimate, completed_count):
-    """Augmente la cible de progression lorsqu’elle est atteinte."""
-    if completed_count < current_estimate:
-        return current_estimate
-    return completed_count + max(100, current_estimate // 2)
 
 
 class LevelIconFormatter(logging.Formatter):
@@ -87,45 +57,6 @@ class LevelIconFormatter(logging.Formatter):
         """Préfixe le message journalisé avec l’icône du niveau."""
         icon = self.LEVEL_ICONS.get(record.levelno, "•")
         return f"{icon} {super().format(record)}"
-
-
-def _download_user_photo(user_id, identifier, photo_directory, request_graph):
-    """Télécharge et met en cache la photo Graph d’un utilisateur."""
-    logger = logging.getLogger(__name__)
-    account_reference = identifier or user_id
-    safe_identifier = "".join(
-        "_" if character in '<>:"/\\|?*' else character
-        for character in (identifier or "inconnu")
-    ).rstrip(" .")
-    photo_path = photo_directory / f"{safe_identifier}_{user_id}.jpg"
-    if photo_path.is_file() and photo_path.stat().st_size > 0:
-        logger.info(
-            "Photo réutilisée depuis le cache pour le compte %s.",
-            account_reference,
-        )
-        return photo_path
-
-    response = request_graph(
-        f"{GRAPH_BASE_URL}/users/{user_id}/photo/$value"
-    )
-    if response.status_code == 404:
-        logger.info(
-            "Aucune photo disponible pour le compte %s.",
-            account_reference,
-        )
-        return None
-    response.raise_for_status()
-    if not response.content:
-        raise ValueError(f"La photo de l’utilisateur {user_id} est vide.")
-
-    photo_directory.mkdir(parents=True, exist_ok=True)
-    atomic_write(
-        photo_path,
-        lambda stream: stream.write(response.content),
-        mode="wb",
-    )
-    logger.info("Photo récupérée pour le compte %s.", account_reference)
-    return photo_path
 
 
 def initialize_output(config_path):
@@ -175,71 +106,11 @@ def _csv_row_from_user_entry(user_entry):
     }
 
 
-def _save_resume_state(resume_state_path, state):
-    """Enregistre atomiquement l'etat de reprise de l'export AD."""
-    atomic_write(
-        resume_state_path,
-        lambda stream: json.dump(state, stream),
-        encoding="utf-8",
-    )
-
-
-def _load_resume_state(resume_state_path, logger):
-    """Charge l'etat de reprise s'il est present et valide."""
-    if not resume_state_path.is_file():
-        return None
-    try:
-        with resume_state_path.open(encoding="utf-8") as state_file:
-            state = json.load(state_file)
-        if not isinstance(state, dict):
-            raise ValueError("format d'etat invalide")
-        required_keys = {
-            "temporary_csv_path",
-            "pending",
-            "processed_ids",
-            "exported_count",
-        }
-        missing_keys = required_keys - set(state.keys())
-        if missing_keys:
-            raise ValueError(
-                "cles manquantes: " + ", ".join(sorted(missing_keys))
-            )
-        return state
-    except (OSError, ValueError, json.JSONDecodeError) as error:
-        logger.warning(
-            "Etat de reprise ignore car invalide (%s): %s",
-            resume_state_path,
-            error,
-        )
-        return None
-
-
 MAX_INTERMEDIATE_LEVELS = 2
 MAX_CONCURRENT_REQUESTS = 6
 MAX_PHOTO_WORKERS = 4
 BATCH_ACCOUNTS = 10
 RESUME_SAVE_INTERVAL_SECONDS = 5.0
-EXPORT_KEY_TYPES = ("email", "matricule", "name")
-
-
-def _new_key_index():
-    """Crée l’index vide des clés métier des lignes déjà exportées."""
-    return {key_type: set() for key_type in EXPORT_KEY_TYPES}
-
-
-def _add_exported_keys(keys_by_type, row):
-    """Ajoute les clés d’identification d’une ligne déjà exportée."""
-    for key_type, key in active_directory_keys(row).items():
-        if key:
-            keys_by_type[key_type].add(key)
-
-
-def _has_exported_key(keys_by_type, row):
-    """Indique si une ligne est déjà présente selon ses clés métier."""
-    return any(
-        key and key in keys_by_type[key_type]
-        for key_type, key in active_directory_keys(row).items()
-    )
 
 
 def _account_reference(user_entry):
@@ -301,33 +172,6 @@ def _acquire_access_token(config, scopes, logger, on_device_code):
         raise
     logger.info("Authentification Microsoft réussie.")
     return result["access_token"]
-
-
-class _ExportState:
-    """État mutable de la collecte, sérialisable pour une reprise."""
-
-    def __init__(self, start_user_email):
-        self.pending = [(start_user_email, True, 0)]
-        self.processed_ids = set()
-        self.exported_count = 0
-        self.keys_by_type = _new_key_index()
-        self.temporary_path = None
-
-    def to_resume_dict(self):
-        """Représente l’état dans le format JSON de reprise."""
-        return {
-            "temporary_csv_path": str(self.temporary_path),
-            "pending": [
-                {
-                    "user_id_or_email": user_id_or_email,
-                    "is_root": is_root,
-                    "intermediate_levels": intermediate_levels,
-                }
-                for user_id_or_email, is_root, intermediate_levels in self.pending
-            ],
-            "processed_ids": sorted(self.processed_ids),
-            "exported_count": self.exported_count,
-        }
 
 
 class ActiveDirectoryCollector:
@@ -749,52 +593,6 @@ class ActiveDirectoryCollector:
             appended_count,
         )
         return appended_count
-
-
-def _restore_resume_state(resume_state_path, state, logger):
-    """Recharge un export interrompu dans `state`; retourne True si la reprise a eu lieu."""
-    resume_state = _load_resume_state(resume_state_path, logger)
-    if resume_state is None:
-        return False
-    candidate_path = Path(resume_state["temporary_csv_path"])
-    try:
-        _, resumed_rows = read_csv(
-            candidate_path,
-            ",",
-            PROGRESS_EXPORT_COLUMNS,
-        )
-        pending = [
-            (
-                item["user_id_or_email"],
-                item["is_root"],
-                item["intermediate_levels"],
-            )
-            for item in resume_state["pending"]
-        ]
-        processed_ids = set(resume_state["processed_ids"])
-    except (KeyError, TypeError, ValueError, OSError, UnicodeError) as error:
-        logger.warning(
-            "Reprise impossible avec l'etat enregistre (%s) : %s. "
-            "Un nouvel export complet sera lance.",
-            candidate_path,
-            error,
-        )
-        resume_state_path.unlink(missing_ok=True)
-        return False
-
-    state.pending = pending
-    state.processed_ids = processed_ids
-    for resumed_row in resumed_rows:
-        _add_exported_keys(state.keys_by_type, resumed_row)
-    state.exported_count = len(resumed_rows)
-    state.temporary_path = candidate_path
-    logger.info(
-        "Reprise d'un export interrompu : %s ligne(s) deja ecrite(s), "
-        "%s compte(s) en attente.",
-        state.exported_count,
-        len(pending),
-    )
-    return True
 
 
 def _create_temporary_export(output_dir, csv_filename):

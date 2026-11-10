@@ -6,15 +6,17 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+from services.swile_config import (
+    load_addition_filters,
+    load_work_location_mapping,
+    map_work_location_value,
+    save_work_location_mapping,
+)
 from services.swile_service import (
     compare_users,
     generate_additions,
     generate_work_location_values,
     execute_swile_action,
-    load_addition_filters,
-    load_work_location_mapping,
-    map_work_location_value,
-    save_work_location_mapping,
 )
 
 
@@ -301,11 +303,11 @@ class SwileServiceTests(unittest.TestCase):
         )
         with (
             patch(
-                "services.swile_service.SWILE_CONFIG_PATH",
+                "services.swile_config.SWILE_CONFIG_PATH",
                 self.root / "swile.config.json",
             ),
             patch(
-                "services.swile_service.LEGACY_SWILE_CONFIG_PATH",
+                "services.swile_config.LEGACY_SWILE_CONFIG_PATH",
                 legacy_path,
             ),
         ):

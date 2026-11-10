@@ -40,11 +40,11 @@ class DesktopAppTests(unittest.TestCase):
             patch("services.active_directory_config.project_root", return_value=self.root)
         )
         self.stack.enter_context(
-            patch("services.swile_service.SWILE_CONFIG_PATH", self.swile_config)
+            patch("services.swile_config.SWILE_CONFIG_PATH", self.swile_config)
         )
         self.stack.enter_context(
             patch(
-                "services.swile_service.LEGACY_SWILE_CONFIG_PATH",
+                "services.swile_config.LEGACY_SWILE_CONFIG_PATH",
                 self.root / "legacy.json",
             )
         )

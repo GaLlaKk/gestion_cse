@@ -3,7 +3,7 @@ from tkinter import messagebox
 from tkinter import ttk
 
 
-from services.swile_service import (
+from services.swile_config import (
     SWILE_CONFIG_PATH,
     load_addition_filters,
     load_work_location_mapping,
