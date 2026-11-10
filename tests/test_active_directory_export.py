@@ -1,6 +1,7 @@
 import csv
 import tempfile
 import unittest
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -8,6 +9,13 @@ import requests
 
 from services import active_directory_export
 from services.graph_client import GRAPH_BASE_URL
+
+CONFIG_JSON = (
+    '{"start_user_email":"start@example.com",'
+    '"client_id":"client-id","authority":"authority",'
+    '"report_domain":"example.com","scopes":["scope"]}'
+)
+DEVICE_FLOW = {"user_code": "ABCD1234", "message": "Sign in"}
 
 
 def batch_post(request_graph):
@@ -31,6 +39,113 @@ def batch_post(request_graph):
         return outer
 
     return post
+
+
+def graph_response(status_code=200, payload=None, content=None):
+    """Construit une réponse Graph simulée."""
+    response = Mock(status_code=status_code)
+    if content is not None:
+        response.content = content
+    response.json.return_value = payload
+    response.raise_for_status.return_value = None
+    return response
+
+
+def authenticated_client():
+    """Crée un client MSAL simulé dont l’authentification réussit."""
+    client = Mock()
+    client.initiate_device_flow.return_value = DEVICE_FLOW
+    client.acquire_token_by_device_flow.return_value = {
+        "access_token": "token"
+    }
+    return client
+
+
+def write_config(root):
+    """Écrit la configuration minimale d’export et retourne son chemin."""
+    config_path = Path(root) / "config.json"
+    config_path.write_text(CONFIG_JSON, encoding="utf-8")
+    return config_path
+
+
+def write_previous_export(path, rows):
+    """Écrit un export Active Directory précédent minimal."""
+    with path.open("w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=["Nom", "Email", "Identifiant", "Poste"],
+            delimiter=",",
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def read_rows(path):
+    """Lit les lignes d’un export généré."""
+    with path.open(encoding="utf-8", newline="") as stream:
+        return list(csv.DictReader(stream))
+
+
+def start_user_payload():
+    """Retourne la réponse Graph du compte de départ."""
+    return {
+        "id": "root-id",
+        "displayName": "Start User",
+        "mail": "start@example.com",
+        "userPrincipalName": "start@example.com",
+        "jobTitle": "Analyste",
+        "officeLocation": "Paris",
+        "department": "Services",
+    }
+
+
+@contextmanager
+def patched_export(
+    config_path,
+    output_directory,
+    request_graph,
+    client=None,
+    logger=None,
+    patch_sleep=False,
+):
+    """Isole l’export AD : configuration, MSAL, journal et appels Graph."""
+    client = client or authenticated_client()
+    logger = logger or Mock()
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch.object(
+                active_directory_export,
+                "get_config_path",
+                return_value=config_path,
+            )
+        )
+        stack.enter_context(
+            patch.object(
+                active_directory_export,
+                "initialize_output",
+                return_value=(logger, output_directory, "20261028"),
+            )
+        )
+        stack.enter_context(
+            patch.object(
+                active_directory_export,
+                "PublicClientApplication",
+                return_value=client,
+            )
+        )
+        stack.enter_context(
+            patch.object(requests.Session, "get", side_effect=request_graph)
+        )
+        stack.enter_context(
+            patch.object(
+                requests.Session,
+                "post",
+                side_effect=batch_post(request_graph),
+            )
+        )
+        if patch_sleep:
+            stack.enter_context(patch("services.graph_client.time.sleep"))
+        yield logger
 
 
 class ActiveDirectoryExportTests(unittest.TestCase):
@@ -191,15 +306,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
     def test_device_code_is_forwarded_to_callback(self):
         """Vérifie que l’URL et le code d’appareil sont transmis au callback."""
         with tempfile.TemporaryDirectory() as temporary_directory:
-            config_path = Path(temporary_directory) / "config.json"
-            config_path.write_text(
-                (
-                    '{"start_user_email":"start@example.com",'
-                    '"client_id":"client-id","authority":"authority",'
-                    '"report_domain":"example.com","scopes":["scope"]}'
-                ),
-                encoding="utf-8",
-            )
+            config_path = write_config(temporary_directory)
             flow = {
                 "user_code": "ABCD1234",
                 "verification_uri": "https://login.microsoft.com/device",
@@ -207,29 +314,17 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             }
             callback = Mock()
             client = Mock()
-            logger = Mock()
             client.initiate_device_flow.return_value = flow
             client.acquire_token_by_device_flow.return_value = {
                 "error_description": "Authentication did not complete."
             }
 
-            with (
-                patch.object(
-                    active_directory_export,
-                    "get_config_path",
-                    return_value=config_path,
-                ),
-                patch.object(
-                    active_directory_export,
-                    "initialize_output",
-                    return_value=(logger, Path(temporary_directory), "20260101"),
-                ),
-                patch.object(
-                    active_directory_export,
-                    "PublicClientApplication",
-                    return_value=client,
-                ),
-            ):
+            with patched_export(
+                config_path,
+                Path(temporary_directory),
+                request_graph=Mock(),
+                client=client,
+            ) as logger:
                 with self.assertRaisesRegex(
                     Exception, "Authentication did not complete"
                 ):
@@ -250,50 +345,18 @@ class ActiveDirectoryExportTests(unittest.TestCase):
         """Vérifie l’écriture temporaire des lignes avant publication du CSV."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            config_path = root / "config.json"
-            config_path.write_text(
-                (
-                    '{"start_user_email":"start@example.com",'
-                    '"client_id":"client-id","authority":"authority",'
-                    '"report_domain":"example.com","scopes":["scope"]}'
-                ),
-                encoding="utf-8",
-            )
+            config_path = write_config(root)
             output_directory = root / "out"
             output_directory.mkdir()
             final_path = (
                 output_directory / "20261028_liste_salarie_active_directory.csv"
             )
-            flow = {"user_code": "ABCD1234", "message": "Sign in"}
-            client = Mock()
-            client.initiate_device_flow.return_value = flow
-            client.acquire_token_by_device_flow.return_value = {
-                "access_token": "token"
-            }
-            logger = Mock()
             progress_updates = []
-
-            def graph_response(status_code=200, payload=None):
-                """Construit une réponse Graph simulée pour le scénario."""
-                response = Mock(status_code=status_code)
-                response.json.return_value = payload
-                response.raise_for_status.return_value = None
-                return response
 
             def request_graph(url, **_kwargs):
                 """Fournit les réponses Graph attendues par la collecte simulée."""
                 if "/users/start@example.com?" in url:
-                    return graph_response(
-                        payload={
-                            "id": "root-id",
-                            "displayName": "Start User",
-                            "mail": "start@example.com",
-                            "userPrincipalName": "start@example.com",
-                            "jobTitle": "Analyste",
-                            "officeLocation": "Paris",
-                            "department": "Services",
-                        }
-                    )
+                    return graph_response(payload=start_user_payload())
                 if "/users/root-id/manager" in url:
                     return graph_response(status_code=404)
                 if "/users/start@example.com/directReports" in url:
@@ -304,31 +367,9 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return graph_response(payload={"value": []})
                 self.fail(f"URL Graph inattendue : {url}")
 
-            with (
-                patch.object(
-                    active_directory_export,
-                    "get_config_path",
-                    return_value=config_path,
-                ),
-                patch.object(
-                    active_directory_export,
-                    "initialize_output",
-                    return_value=(logger, output_directory, "20261028"),
-                ),
-                patch.object(
-                    active_directory_export,
-                    "PublicClientApplication",
-                    return_value=client,
-                ),
-                patch.object(
-                    requests.Session, "get", side_effect=request_graph
-                ),
-                patch.object(
-                    requests.Session,
-                    "post",
-                    side_effect=batch_post(request_graph),
-                ),
-            ):
+            with patched_export(
+                config_path, output_directory, request_graph
+            ) as logger:
                 result_path = active_directory_export.run_active_directory_export(
                     on_progress=lambda completed, estimate, phase: (
                         progress_updates.append((completed, estimate, phase))
@@ -340,8 +381,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 "Compte Active Directory examiné : %s.",
                 "start@example.com",
             )
-            with final_path.open(encoding="utf-8", newline="") as stream:
-                rows = list(csv.DictReader(stream))
+            rows = read_rows(final_path)
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["Email"], "start@example.com")
             self.assertEqual(rows[0]["Lieu de travail"], "Paris")
@@ -360,32 +400,9 @@ class ActiveDirectoryExportTests(unittest.TestCase):
         """Vérifie que les photos sont téléchargées et qu’une erreur reste non bloquante."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            config_path = root / "config.json"
-            config_path.write_text(
-                (
-                    '{"start_user_email":"start@example.com",'
-                    '"client_id":"client-id","authority":"authority",'
-                    '"report_domain":"example.com","scopes":["scope"]}'
-                ),
-                encoding="utf-8",
-            )
+            config_path = write_config(root)
             output_directory = root / "out"
             output_directory.mkdir()
-            client = Mock()
-            client.initiate_device_flow.return_value = {
-                "user_code": "ABCD1234",
-                "message": "Sign in",
-            }
-            client.acquire_token_by_device_flow.return_value = {
-                "access_token": "token"
-            }
-            logger = Mock()
-
-            def graph_response(status_code=200, payload=None, content=b""):
-                response = Mock(status_code=status_code, content=content)
-                response.json.return_value = payload
-                response.raise_for_status.return_value = None
-                return response
 
             def user(identifier, mail):
                 return {
@@ -416,32 +433,9 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     raise requests.ConnectionError("coupure photo")
                 self.fail(f"URL Graph inattendue : {url}")
 
-            with (
-                patch.object(
-                    active_directory_export,
-                    "get_config_path",
-                    return_value=config_path,
-                ),
-                patch.object(
-                    active_directory_export,
-                    "initialize_output",
-                    return_value=(logger, output_directory, "20261028"),
-                ),
-                patch.object(
-                    active_directory_export,
-                    "PublicClientApplication",
-                    return_value=client,
-                ),
-                patch.object(
-                    requests.Session, "get", side_effect=request_graph
-                ),
-                patch.object(
-                    requests.Session,
-                    "post",
-                    side_effect=batch_post(request_graph),
-                ),
-                patch("services.graph_client.time.sleep"),
-            ):
+            with patched_export(
+                config_path, output_directory, request_graph, patch_sleep=True
+            ) as logger:
                 result_path = active_directory_export.run_active_directory_export(
                     download_photos=True
                 )
@@ -456,31 +450,9 @@ class ActiveDirectoryExportTests(unittest.TestCase):
         """Vérifie qu’aucun CSV d’en-tête seul n’est publié."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            config_path = root / "config.json"
-            config_path.write_text(
-                (
-                    '{"start_user_email":"start@example.com",'
-                    '"client_id":"client-id","authority":"authority",'
-                    '"report_domain":"example.com","scopes":["scope"]}'
-                ),
-                encoding="utf-8",
-            )
+            config_path = write_config(root)
             output_directory = root / "out"
             output_directory.mkdir()
-            flow = {"user_code": "ABCD1234", "message": "Sign in"}
-            client = Mock()
-            client.initiate_device_flow.return_value = flow
-            client.acquire_token_by_device_flow.return_value = {
-                "access_token": "token"
-            }
-            logger = Mock()
-
-            def graph_response(status_code=200, payload=None):
-                """Construit une réponse Graph simulée."""
-                response = Mock(status_code=status_code)
-                response.json.return_value = payload
-                response.raise_for_status.return_value = None
-                return response
 
             def request_graph(url, **_kwargs):
                 """Retourne un compte externe sans rapport à exporter."""
@@ -499,31 +471,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return graph_response(payload={"value": []})
                 self.fail(f"URL Graph inattendue : {url}")
 
-            with (
-                patch.object(
-                    active_directory_export,
-                    "get_config_path",
-                    return_value=config_path,
-                ),
-                patch.object(
-                    active_directory_export,
-                    "initialize_output",
-                    return_value=(logger, output_directory, "20261028"),
-                ),
-                patch.object(
-                    active_directory_export,
-                    "PublicClientApplication",
-                    return_value=client,
-                ),
-                patch.object(
-                    requests.Session, "get", side_effect=request_graph
-                ),
-                patch.object(
-                    requests.Session,
-                    "post",
-                    side_effect=batch_post(request_graph),
-                ),
-            ):
+            with patched_export(config_path, output_directory, request_graph):
                 result_path = active_directory_export.run_active_directory_export()
 
             self.assertIsNone(result_path)
@@ -538,15 +486,7 @@ class ActiveDirectoryExportTests(unittest.TestCase):
         """Vérifie la reprise automatique après une coupure réseau pendant la collecte."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            config_path = root / "config.json"
-            config_path.write_text(
-                (
-                    '{"start_user_email":"start@example.com",'
-                    '"client_id":"client-id","authority":"authority",'
-                    '"report_domain":"example.com","scopes":["scope"]}'
-                ),
-                encoding="utf-8",
-            )
+            config_path = write_config(root)
             output_directory = root / "out"
             output_directory.mkdir()
             final_path = (
@@ -555,38 +495,12 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             resume_state_path = (
                 output_directory / active_directory_export.RESUME_STATE_FILENAME
             )
-
-            flow = {"user_code": "ABCD1234", "message": "Sign in"}
-            client = Mock()
-            client.initiate_device_flow.return_value = flow
-            client.acquire_token_by_device_flow.return_value = {
-                "access_token": "token"
-            }
-            logger = Mock()
-
-            def graph_response(status_code=200, payload=None):
-                """Construit une réponse Graph simulée pour le scénario."""
-                response = Mock(status_code=status_code)
-                response.json.return_value = payload
-                response.raise_for_status.return_value = None
-                return response
-
             phase = {"value": "fail"}
 
             def request_graph(url, **_kwargs):
                 """Simule une coupure réseau puis un succès au redémarrage."""
                 if "/users/start@example.com?" in url:
-                    return graph_response(
-                        payload={
-                            "id": "root-id",
-                            "displayName": "Start User",
-                            "mail": "start@example.com",
-                            "userPrincipalName": "start@example.com",
-                            "jobTitle": "Analyste",
-                            "officeLocation": "Paris",
-                            "department": "Services",
-                        }
-                    )
+                    return graph_response(payload=start_user_payload())
                 if "/users/root-id/manager" in url:
                     return graph_response(status_code=404)
                 if "/users/start@example.com/directReports" in url:
@@ -623,31 +537,8 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return graph_response(payload={"value": []})
                 self.fail(f"URL Graph inattendue : {url}")
 
-            with (
-                patch.object(
-                    active_directory_export,
-                    "get_config_path",
-                    return_value=config_path,
-                ),
-                patch.object(
-                    active_directory_export,
-                    "initialize_output",
-                    return_value=(logger, output_directory, "20261028"),
-                ),
-                patch.object(
-                    active_directory_export,
-                    "PublicClientApplication",
-                    return_value=client,
-                ),
-                patch.object(
-                    requests.Session, "get", side_effect=request_graph
-                ),
-                patch.object(
-                    requests.Session,
-                    "post",
-                    side_effect=batch_post(request_graph),
-                ),
-                patch("services.graph_client.time.sleep"),
+            with patched_export(
+                config_path, output_directory, request_graph, patch_sleep=True
             ):
                 with self.assertRaises(requests.ConnectionError):
                     active_directory_export.run_active_directory_export()
@@ -661,10 +552,8 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             self.assertEqual(result_path, final_path)
             self.assertFalse(resume_state_path.exists())
             self.assertEqual(len(list(output_directory.glob("*.tmp"))), 0)
-            with final_path.open(encoding="utf-8", newline="") as stream:
-                rows = list(csv.DictReader(stream))
             self.assertEqual(
-                [row["Email"] for row in rows],
+                [row["Email"] for row in read_rows(final_path)],
                 ["start@example.com", "child@example.com"],
             )
 
@@ -672,76 +561,35 @@ class ActiveDirectoryExportTests(unittest.TestCase):
         """Vérifie l’ajout des comptes encore visibles absents de l’export."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            config_path = root / "config.json"
-            config_path.write_text(
-                (
-                    '{"start_user_email":"start@example.com",'
-                    '"client_id":"client-id","authority":"authority",'
-                    '"report_domain":"example.com","scopes":["scope"]}'
-                ),
-                encoding="utf-8",
-            )
+            config_path = write_config(root)
             output_directory = root / "out"
             output_directory.mkdir()
             previous_export_path = root / "previous.csv"
-            with previous_export_path.open(
-                "w", newline="", encoding="utf-8-sig"
-            ) as stream:
-                writer = csv.DictWriter(
-                    stream,
-                    fieldnames=["Nom", "Email", "Identifiant", "Poste"],
-                    delimiter=",",
-                )
-                writer.writeheader()
-                writer.writerows(
-                    [
-                        {
-                            "Nom": "Start User",
-                            "Email": "start@example.com",
-                            "Identifiant": "start",
-                            "Poste": "Analyste",
-                        },
-                        {
-                            "Nom": "Legacy User",
-                            "Email": "legacy@example.com",
-                            "Identifiant": "legacy",
-                            "Poste": "Consultant",
-                        },
-                    ]
-                )
-
+            write_previous_export(
+                previous_export_path,
+                [
+                    {
+                        "Nom": "Start User",
+                        "Email": "start@example.com",
+                        "Identifiant": "start",
+                        "Poste": "Analyste",
+                    },
+                    {
+                        "Nom": "Legacy User",
+                        "Email": "legacy@example.com",
+                        "Identifiant": "legacy",
+                        "Poste": "Consultant",
+                    },
+                ],
+            )
             final_path = (
                 output_directory / "20261028_liste_salarie_active_directory.csv"
             )
-            flow = {"user_code": "ABCD1234", "message": "Sign in"}
-            client = Mock()
-            client.initiate_device_flow.return_value = flow
-            client.acquire_token_by_device_flow.return_value = {
-                "access_token": "token"
-            }
-            logger = Mock()
-
-            def graph_response(status_code=200, payload=None):
-                """Construit une réponse Graph simulée pour le scénario."""
-                response = Mock(status_code=status_code)
-                response.json.return_value = payload
-                response.raise_for_status.return_value = None
-                return response
 
             def request_graph(url, **_kwargs):
                 """Fournit les réponses Graph prévues pour les utilisateurs."""
                 if "/users/start@example.com?" in url:
-                    return graph_response(
-                        payload={
-                            "id": "root-id",
-                            "displayName": "Start User",
-                            "mail": "start@example.com",
-                            "userPrincipalName": "start@example.com",
-                            "jobTitle": "Analyste",
-                            "officeLocation": "Paris",
-                            "department": "Services",
-                        }
-                    )
+                    return graph_response(payload=start_user_payload())
                 if "/users/root-id/manager" in url:
                     return graph_response(status_code=404)
                 if "/users/start@example.com/directReports" in url:
@@ -764,38 +612,13 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return graph_response(payload={"value": []})
                 self.fail(f"URL Graph inattendue : {url}")
 
-            with (
-                patch.object(
-                    active_directory_export,
-                    "get_config_path",
-                    return_value=config_path,
-                ),
-                patch.object(
-                    active_directory_export,
-                    "initialize_output",
-                    return_value=(logger, output_directory, "20261028"),
-                ),
-                patch.object(
-                    active_directory_export,
-                    "PublicClientApplication",
-                    return_value=client,
-                ),
-                patch.object(
-                    requests.Session, "get", side_effect=request_graph
-                ),
-                patch.object(
-                    requests.Session,
-                    "post",
-                    side_effect=batch_post(request_graph),
-                ),
-            ):
+            with patched_export(config_path, output_directory, request_graph):
                 result_path = active_directory_export.run_active_directory_export(
                     previous_export_path=previous_export_path
                 )
 
             self.assertEqual(result_path, final_path)
-            with final_path.open(encoding="utf-8", newline="") as stream:
-                rows = list(csv.DictReader(stream))
+            rows = read_rows(final_path)
             self.assertEqual(len(rows), 2)
             self.assertEqual(
                 [row["Email"] for row in rows],
@@ -806,73 +629,32 @@ class ActiveDirectoryExportTests(unittest.TestCase):
         """Vérifie que les comptes absents de Graph ne sont pas ajoutés."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            config_path = root / "config.json"
-            config_path.write_text(
-                (
-                    '{"start_user_email":"start@example.com",'
-                    '"client_id":"client-id","authority":"authority",'
-                    '"report_domain":"example.com","scopes":["scope"]}'
-                ),
-                encoding="utf-8",
-            )
+            config_path = write_config(root)
             output_directory = root / "out"
             output_directory.mkdir()
             previous_export_path = root / "previous.csv"
-            with previous_export_path.open(
-                "w", newline="", encoding="utf-8-sig"
-            ) as stream:
-                writer = csv.DictWriter(
-                    stream,
-                    fieldnames=["Nom", "Email", "Identifiant", "Poste"],
-                    delimiter=",",
-                )
-                writer.writeheader()
-                writer.writerows(
-                    [
-                        {
-                            "Nom": "Start User",
-                            "Email": "start@example.com",
-                            "Identifiant": "start",
-                            "Poste": "Analyste",
-                        },
-                        {
-                            "Nom": "Deleted User",
-                            "Email": "deleted@example.com",
-                            "Identifiant": "deleted",
-                            "Poste": "Consultant",
-                        },
-                    ]
-                )
-
-            flow = {"user_code": "ABCD1234", "message": "Sign in"}
-            client = Mock()
-            client.initiate_device_flow.return_value = flow
-            client.acquire_token_by_device_flow.return_value = {
-                "access_token": "token"
-            }
-            logger = Mock()
-
-            def graph_response(status_code=200, payload=None):
-                """Construit une réponse Graph simulée pour le scénario."""
-                response = Mock(status_code=status_code)
-                response.json.return_value = payload
-                response.raise_for_status.return_value = None
-                return response
+            write_previous_export(
+                previous_export_path,
+                [
+                    {
+                        "Nom": "Start User",
+                        "Email": "start@example.com",
+                        "Identifiant": "start",
+                        "Poste": "Analyste",
+                    },
+                    {
+                        "Nom": "Deleted User",
+                        "Email": "deleted@example.com",
+                        "Identifiant": "deleted",
+                        "Poste": "Consultant",
+                    },
+                ],
+            )
 
             def request_graph(url, **_kwargs):
                 """Fournit les réponses Graph prévues, dont le compte absent."""
                 if "/users/start@example.com?" in url:
-                    return graph_response(
-                        payload={
-                            "id": "root-id",
-                            "displayName": "Start User",
-                            "mail": "start@example.com",
-                            "userPrincipalName": "start@example.com",
-                            "jobTitle": "Analyste",
-                            "officeLocation": "Paris",
-                            "department": "Services",
-                        }
-                    )
+                    return graph_response(payload=start_user_payload())
                 if "/users/root-id/manager" in url:
                     return graph_response(status_code=404)
                 if "/users/start@example.com/directReports" in url:
@@ -881,36 +663,11 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     return graph_response(status_code=404)
                 self.fail(f"URL Graph inattendue : {url}")
 
-            with (
-                patch.object(
-                    active_directory_export,
-                    "get_config_path",
-                    return_value=config_path,
-                ),
-                patch.object(
-                    active_directory_export,
-                    "initialize_output",
-                    return_value=(logger, output_directory, "20261028"),
-                ),
-                patch.object(
-                    active_directory_export,
-                    "PublicClientApplication",
-                    return_value=client,
-                ),
-                patch.object(
-                    requests.Session, "get", side_effect=request_graph
-                ),
-                patch.object(
-                    requests.Session,
-                    "post",
-                    side_effect=batch_post(request_graph),
-                ),
-            ):
+            with patched_export(config_path, output_directory, request_graph):
                 result_path = active_directory_export.run_active_directory_export(
                     previous_export_path=previous_export_path
                 )
 
-            with result_path.open(encoding="utf-8", newline="") as stream:
-                rows = list(csv.DictReader(stream))
+            rows = read_rows(result_path)
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["Email"], "start@example.com")
