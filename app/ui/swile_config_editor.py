@@ -269,47 +269,14 @@ class SwileConfigEditorMixin:
         pattern_entry.bind("<<Paste>>", self._mark_work_location_mapping_dirty)
         value_entry.bind("<KeyRelease>", self._mark_work_location_mapping_dirty)
         value_entry.bind("<<Paste>>", self._mark_work_location_mapping_dirty)
-        move_up_button = tk.Button(
+        row = self._build_rule_row(
             row_frame,
-            text="↑",
-            width=2,
-            command=lambda selected=row_frame: self._move_work_location_rule(
-                selected, -1
-            ),
+            pattern_var,
+            value_var,
+            (pattern_entry, value_entry),
+            self._move_work_location_rule,
+            self._remove_work_location_rule,
         )
-        move_up_button.grid(row=0, column=2, padx=(0, 2))
-        move_down_button = tk.Button(
-            row_frame,
-            text="↓",
-            width=2,
-            command=lambda selected=row_frame: self._move_work_location_rule(
-                selected, 1
-            ),
-        )
-        move_down_button.grid(row=0, column=3, padx=(0, 2))
-        remove_button = tk.Button(
-            row_frame,
-            text="×",
-            width=2,
-            command=lambda selected=row_frame: self._remove_work_location_rule(
-                selected
-            ),
-        )
-        remove_button.grid(row=0, column=4)
-        row = {
-            "frame": row_frame,
-            "pattern": pattern_var,
-            "value": value_var,
-            "controls": (
-                pattern_entry,
-                value_entry,
-                move_up_button,
-                move_down_button,
-                remove_button,
-            ),
-            "move_up": move_up_button,
-            "move_down": move_down_button,
-        }
         self.work_location_mapping_rows.append(row)
         self.work_location_mapping_controls.extend(row["controls"])
         self._refresh_work_location_rule_rows()
@@ -318,18 +285,7 @@ class SwileConfigEditorMixin:
 
     def _refresh_work_location_rule_rows(self):
         """Actualise l’ordre et l’état des commandes de déplacement."""
-        last_index = len(self.work_location_mapping_rows) - 1
-        for index, row in enumerate(self.work_location_mapping_rows):
-            row["frame"].grid(
-                row=index,
-                column=0,
-                sticky="ew",
-                pady=2,
-            )
-            row["move_up"].configure(state="disabled" if index == 0 else "normal")
-            row["move_down"].configure(
-                state="disabled" if index == last_index else "normal"
-            )
+        self._layout_rule_rows(self.work_location_mapping_rows)
 
     def _add_addition_filter_rule(
         self, filter_name, pattern="", value="exclure", mark_dirty=False
@@ -359,47 +315,18 @@ class SwileConfigEditorMixin:
         value_entry.bind(
             "<<ComboboxSelected>>", self._mark_work_location_mapping_dirty
         )
-        move_up_button = tk.Button(
+        row = self._build_rule_row(
             row_frame,
-            text="↑",
-            width=2,
-            command=lambda selected=row_frame: self._move_addition_filter_rule(
-                filter_name, selected, -1
+            pattern_var,
+            value_var,
+            (pattern_entry, value_entry),
+            lambda frame, offset: self._move_addition_filter_rule(
+                filter_name, frame, offset
+            ),
+            lambda frame: self._remove_addition_filter_rule(
+                filter_name, frame
             ),
         )
-        move_up_button.grid(row=0, column=2, padx=(0, 2))
-        move_down_button = tk.Button(
-            row_frame,
-            text="↓",
-            width=2,
-            command=lambda selected=row_frame: self._move_addition_filter_rule(
-                filter_name, selected, 1
-            ),
-        )
-        move_down_button.grid(row=0, column=3, padx=(0, 2))
-        remove_button = tk.Button(
-            row_frame,
-            text="×",
-            width=2,
-            command=lambda selected=row_frame: self._remove_addition_filter_rule(
-                filter_name, selected
-            ),
-        )
-        remove_button.grid(row=0, column=4)
-        row = {
-            "frame": row_frame,
-            "pattern": pattern_var,
-            "value": value_var,
-            "controls": (
-                pattern_entry,
-                value_entry,
-                move_up_button,
-                move_down_button,
-                remove_button,
-            ),
-            "move_up": move_up_button,
-            "move_down": move_down_button,
-        }
         self.addition_filter_rows[filter_name].append(row)
         self.work_location_mapping_controls.extend(row["controls"])
         self._refresh_addition_filter_rule_rows(filter_name)
@@ -407,7 +334,66 @@ class SwileConfigEditorMixin:
             self.work_location_mapping_dirty = True
 
     def _refresh_addition_filter_rule_rows(self, filter_name):
-        rows = self.addition_filter_rows[filter_name]
+        self._layout_rule_rows(self.addition_filter_rows[filter_name])
+
+    def _move_addition_filter_rule(self, filter_name, row_frame, offset):
+        self._move_rule_row(
+            self.addition_filter_rows[filter_name], row_frame, offset
+        )
+
+    def _remove_addition_filter_rule(self, filter_name, row_frame):
+        self._remove_rule_row(self.addition_filter_rows[filter_name], row_frame)
+
+    def _move_work_location_rule(self, row_frame, offset):
+        """Déplace une règle d’un rang et met à jour son ordre de priorité."""
+        self._move_rule_row(self.work_location_mapping_rows, row_frame, offset)
+
+    def _remove_work_location_rule(self, row_frame):
+        """Supprime une règle du formulaire."""
+        self._remove_rule_row(self.work_location_mapping_rows, row_frame)
+
+    def _build_rule_row(
+        self, row_frame, pattern_var, value_var, entries, on_move, on_remove
+    ):
+        """Ajoute les boutons communs d’une ligne de règle et la décrit."""
+        move_up_button = tk.Button(
+            row_frame,
+            text="↑",
+            width=2,
+            command=lambda: on_move(row_frame, -1),
+        )
+        move_up_button.grid(row=0, column=2, padx=(0, 2))
+        move_down_button = tk.Button(
+            row_frame,
+            text="↓",
+            width=2,
+            command=lambda: on_move(row_frame, 1),
+        )
+        move_down_button.grid(row=0, column=3, padx=(0, 2))
+        remove_button = tk.Button(
+            row_frame,
+            text="×",
+            width=2,
+            command=lambda: on_remove(row_frame),
+        )
+        remove_button.grid(row=0, column=4)
+        return {
+            "frame": row_frame,
+            "pattern": pattern_var,
+            "value": value_var,
+            "controls": (
+                *entries,
+                move_up_button,
+                move_down_button,
+                remove_button,
+            ),
+            "move_up": move_up_button,
+            "move_down": move_down_button,
+        }
+
+    @staticmethod
+    def _layout_rule_rows(rows):
+        """Place les lignes dans l’ordre et active les déplacements possibles."""
         last_index = len(rows) - 1
         for index, row in enumerate(rows):
             row["frame"].grid(row=index, column=0, sticky="ew", pady=2)
@@ -416,62 +402,28 @@ class SwileConfigEditorMixin:
                 state="disabled" if index == last_index else "normal"
             )
 
-    def _move_addition_filter_rule(self, filter_name, row_frame, offset):
-        rows = self.addition_filter_rows[filter_name]
+    def _move_rule_row(self, rows, row_frame, offset):
+        """Déplace une ligne d’un rang dans `rows` et rafraîchit l’affichage."""
         current_index = next(
-            index
-            for index, row in enumerate(rows)
-            if row["frame"] is row_frame
+            index for index, row in enumerate(rows) if row["frame"] is row_frame
         )
         target_index = current_index + offset
         if not 0 <= target_index < len(rows):
             return
-        row = rows.pop(current_index)
-        rows.insert(target_index, row)
-        self._refresh_addition_filter_rule_rows(filter_name)
+        rows.insert(target_index, rows.pop(current_index))
+        self._layout_rule_rows(rows)
         self.work_location_mapping_dirty = True
 
-    def _remove_addition_filter_rule(self, filter_name, row_frame):
-        rows = self.addition_filter_rows[filter_name]
+    def _remove_rule_row(self, rows, row_frame):
+        """Supprime une ligne de `rows`, ses contrôles et son cadre."""
         row_index = next(
-            index
-            for index, row in enumerate(rows)
-            if row["frame"] is row_frame
+            index for index, row in enumerate(rows) if row["frame"] is row_frame
         )
         row = rows.pop(row_index)
         for control in row["controls"]:
             self.work_location_mapping_controls.remove(control)
         row_frame.destroy()
-        self._refresh_addition_filter_rule_rows(filter_name)
-        self.work_location_mapping_dirty = True
-
-    def _move_work_location_rule(self, row_frame, offset):
-        """Déplace une règle d’un rang et met à jour son ordre de priorité."""
-        current_index = next(
-            index
-            for index, row in enumerate(self.work_location_mapping_rows)
-            if row["frame"] is row_frame
-        )
-        target_index = current_index + offset
-        if not 0 <= target_index < len(self.work_location_mapping_rows):
-            return
-        row = self.work_location_mapping_rows.pop(current_index)
-        self.work_location_mapping_rows.insert(target_index, row)
-        self._refresh_work_location_rule_rows()
-        self.work_location_mapping_dirty = True
-
-    def _remove_work_location_rule(self, row_frame):
-        """Supprime une règle du formulaire."""
-        row_index = next(
-            index
-            for index, row in enumerate(self.work_location_mapping_rows)
-            if row["frame"] is row_frame
-        )
-        row = self.work_location_mapping_rows.pop(row_index)
-        for control in row["controls"]:
-            self.work_location_mapping_controls.remove(control)
-        row_frame.destroy()
-        self._refresh_work_location_rule_rows()
+        self._layout_rule_rows(rows)
         self.work_location_mapping_dirty = True
 
     def _mark_work_location_mapping_dirty(self, event):
