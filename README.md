@@ -37,8 +37,7 @@ indications affichées dans la fenêtre et saisissez le code de vérification.
 ### 3. Générer et comparer les listes
 
 1. Dans l’onglet **liste_salarie_active_directory**, cliquez sur
-   **Générer la liste Active Directory**. La récupération des photos est
-   facultative.
+   **Générer la liste Active Directory**.
 2. Dans l’onglet **swile_active_directory**, sélectionnez le fichier Swile et
    le fichier Active Directory avec **Parcourir…**, ou déposez-les dans les
    zones prévues. Le bouton **Copier le dernier export** permet de reprendre

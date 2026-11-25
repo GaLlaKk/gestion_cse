@@ -23,7 +23,7 @@ class ActiveDirectoryPanelMixin:
     """Configuration, progression et connexion de l’export Active Directory."""
 
     def _build_active_directory_config_section(self, active_directory_primary):
-        """Construit la génération, les photos et la configuration repliable."""
+        """Construit la génération et la configuration repliable."""
         config_container = tk.Frame(active_directory_primary)
         config_container.pack(fill="x", pady=(0, 8))
         self.active_directory_config_expanded = tk.BooleanVar(value=False)
