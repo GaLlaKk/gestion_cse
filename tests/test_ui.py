@@ -76,9 +76,10 @@ class DesktopAppTests(unittest.TestCase):
         self.assertIn(__version__, app.title())
         self.assertEqual(
             [app.tabs.tab(tab, "text") for tab in app.tabs.tabs()],
-            ["liste_salarie_active_directory", "swile_active_directory"],
+            ["liste_salarie_active_directory", "swile_active_directory", "ekie"],
         )
         self.assertEqual(set(app.addition_filter_sections), {"email"})
+        self.assertIn("Configuration à renseigner", app.ekie_config_status.get())
 
     def test_work_location_mapping_round_trip(self):
         """Vérifie l’enregistrement puis le rechargement du mapping des lieux."""

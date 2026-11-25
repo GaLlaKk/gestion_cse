@@ -11,6 +11,7 @@ from tkinterdnd2 import TkinterDnD
 
 from app.ui.constants import (
     OUTPUT_DIRECTORY,
+    EKIE_OUTPUT,
     ACTIVE_DIRECTORY_OUTPUT,
     TITLES,
 )
@@ -22,6 +23,8 @@ from services.swile_service import (
     execute_swile_action,
 )
 from services.active_directory_export import run_active_directory_export
+from services.ekie_config import EKIE_CONFIG_PATH, load_ekie_config, save_ekie_config
+from services.ekie_service import execute_ekie_export
 
 class _OutputWriter:
     def __init__(self, app):
@@ -78,6 +81,8 @@ class CSEFileManager(
         }
         self.addition_filter_sections = {}
         self.work_location_mapping_controls = []
+        self.ekie_config_controls = []
+        self.ekie_cse_members_dirty = False
         self.scrollable_tab_areas = {}
         self.bind_all("<MouseWheel>", self._on_tab_mousewheel)
         self.bind_all("<Button-4>", self._on_tab_mousewheel)
@@ -87,11 +92,15 @@ class CSEFileManager(
         self._build_results_panel()
         active_directory_tab = tk.Frame(self.tabs)
         swile_tab = tk.Frame(self.tabs, padx=12, pady=12)
+        ekie_tab = tk.Frame(self.tabs, padx=12, pady=12)
         self.tabs.add(active_directory_tab, text="liste_salarie_active_directory")
         self.tabs.add(swile_tab, text="swile_active_directory")
+        self.tabs.add(ekie_tab, text="ekie")
         self._build_active_directory_tab(active_directory_tab)
         self._build_swile_tab(swile_tab)
+        self._build_ekie_tab(ekie_tab)
         self._load_work_location_mapping()
+        self._load_ekie_config()
         self._load_active_directory_config()
         self._refresh_file_labels()
         self._set_previous_export_section_default_visibility()
@@ -265,6 +274,158 @@ class CSEFileManager(
         self._build_location_values_section(location_values_content)
         self._create_work_location_mapping_editor(location_values_content)
 
+    def _build_ekie_tab(self, ekie_tab):
+        """Construit l’onglet Ekie pour l’export XLSX des salariés AD."""
+        ekie_content = self._create_scrollable_tab(ekie_tab, padx=8, pady=8)
+        tk.Label(
+            ekie_content,
+            text=(
+                "Génère le fichier XLSX Ekie (email, first_name, last_name, "
+                "is_cse_member) à partir du fichier Active Directory."
+            ),
+            anchor="w",
+            justify="left",
+            wraplength=900,
+            fg="#555555",
+        ).pack(fill="x", pady=(0, 8))
+
+        self._create_input_card("active_directory", ekie_content).pack(
+            fill="x", pady=(0, 8)
+        )
+        generation_section = tk.LabelFrame(
+            ekie_content,
+            text="Générer l’export Ekie",
+            padx=10,
+            pady=8,
+        )
+        generation_section.pack(fill="x", pady=(0, 8))
+        self._create_run_button(
+            generation_section,
+            "Générer template_import_salariees.xlsx",
+            "ekie",
+        )
+        self._build_ekie_config_section(ekie_content)
+
+    def _build_ekie_config_section(self, parent):
+        """Construit l’éditeur des e-mails membres CSE utilisés pour Ekie."""
+        section = tk.LabelFrame(
+            parent,
+            text="Configurer les membres CSE",
+            padx=10,
+            pady=8,
+        )
+        section.pack(fill="both", expand=True)
+        tk.Label(
+            section,
+            text=(
+                f"Fichier : {EKIE_CONFIG_PATH}\n"
+                "Saisissez un e-mail professionnel par ligne. "
+                "Chaque e-mail présent sera exporté avec is_cse_member = VRAI."
+            ),
+            anchor="w",
+            justify="left",
+            wraplength=860,
+        ).pack(fill="x", pady=(0, 6))
+
+        self.ekie_cse_members_editor = ScrolledText(
+            section,
+            height=8,
+            wrap="word",
+            undo=False,
+        )
+        self.ekie_cse_members_editor.pack(fill="both", expand=True)
+        self.ekie_cse_members_editor.bind(
+            "<KeyRelease>", self._mark_ekie_config_dirty
+        )
+        self.ekie_cse_members_editor.bind(
+            "<<Paste>>", self._mark_ekie_config_dirty
+        )
+
+        actions = tk.Frame(section)
+        actions.pack(fill="x", pady=(6, 0))
+        self.ekie_save_button = tk.Button(
+            actions,
+            text="Enregistrer la configuration",
+            command=self._save_ekie_config,
+        )
+        self.ekie_save_button.pack(side="left")
+        self.ekie_reload_button = tk.Button(
+            actions,
+            text="Recharger",
+            command=self._load_ekie_config,
+        )
+        self.ekie_reload_button.pack(side="left", padx=(6, 0))
+        self.ekie_config_status = tk.StringVar(value="")
+        tk.Label(
+            actions,
+            textvariable=self.ekie_config_status,
+            anchor="e",
+            fg="#555555",
+        ).pack(side="right", fill="x", expand=True)
+        self.ekie_config_controls.extend(
+            (
+                self.ekie_cse_members_editor,
+                self.ekie_save_button,
+                self.ekie_reload_button,
+            )
+        )
+
+    def _load_ekie_config(self):
+        """Charge le fichier de configuration des membres CSE pour Ekie."""
+        if self.ekie_cse_members_dirty and not messagebox.askyesno(
+            "Recharger la configuration Ekie ?",
+            "Les modifications non enregistrées seront perdues. Continuer ?",
+            parent=self,
+        ):
+            return
+        try:
+            config = load_ekie_config()
+        except (OSError, UnicodeError, ValueError) as error:
+            self.ekie_config_status.set("Chargement impossible.")
+            messagebox.showerror(
+                "Configuration Ekie invalide",
+                str(error),
+                parent=self,
+            )
+            return
+
+        emails = "\n".join(config["cse_member_emails"])
+        self.ekie_cse_members_editor.delete("1.0", "end")
+        if emails:
+            self.ekie_cse_members_editor.insert("1.0", emails)
+            self.ekie_config_status.set("Configuration chargée.")
+        else:
+            self.ekie_config_status.set(
+                "Configuration à renseigner (liste d’e-mails vide)."
+            )
+        self.ekie_cse_members_dirty = False
+
+    def _save_ekie_config(self):
+        """Valide et enregistre la liste des e-mails CSE pour Ekie."""
+        emails = [
+            email.strip()
+            for email in self.ekie_cse_members_editor.get("1.0", "end").splitlines()
+            if email.strip()
+        ]
+        try:
+            save_ekie_config({"cse_member_emails": emails})
+        except (OSError, UnicodeError, ValueError) as error:
+            self.ekie_config_status.set("Enregistrement impossible.")
+            messagebox.showerror(
+                "Configuration Ekie invalide",
+                str(error),
+                parent=self,
+            )
+            return
+
+        self.ekie_cse_members_dirty = False
+        self.ekie_config_status.set("Configuration enregistrée.")
+
+    def _mark_ekie_config_dirty(self, event):
+        """Signale une modification non enregistrée de la configuration Ekie."""
+        if event.widget is not None:
+            self.ekie_cse_members_dirty = True
+
     def _create_scrollable_tab(self, parent, padx=0, pady=0):
         """Ajoute un contenu défilant verticalement dans un onglet."""
         parent.rowconfigure(0, weight=1)
@@ -376,6 +537,16 @@ class CSEFileManager(
             self._save_work_location_mapping()
             if self.work_location_mapping_dirty:
                 return
+        if action == "ekie" and self.ekie_cse_members_dirty:
+            if not messagebox.askyesno(
+                "Configuration Ekie non enregistrée",
+                "Enregistrer la configuration Ekie modifiée avant de générer le fichier ?",
+                parent=self,
+            ):
+                return
+            self._save_ekie_config()
+            if self.ekie_cse_members_dirty:
+                return
         try:
             if action == "active_directory":
                 previous_export_path = self._current_file(
@@ -465,6 +636,8 @@ class CSEFileManager(
                         previous_export_path=previous_export_path,
                         on_progress=self._schedule_active_directory_progress,
                     )
+                elif action == "ekie":
+                    result = execute_ekie_export(active_directory_path)
                 else:
                     result = execute_swile_action(
                         action,
@@ -553,6 +726,7 @@ class CSEFileManager(
         for control in (
             self.active_directory_config_controls
             + self.work_location_mapping_controls
+            + self.ekie_config_controls
         ):
             control.configure(state=state)
         if state == "normal":
@@ -576,11 +750,13 @@ class CSEFileManager(
 
     def _open_output_directory(self):
         """Ouvre le dossier de résultats correspondant à l’onglet actif."""
-        output_directory = (
-            ACTIVE_DIRECTORY_OUTPUT
-            if self.tabs.index("current") == 0
-            else OUTPUT_DIRECTORY
-        )
+        current_tab_name = self.tabs.tab("current", "text")
+        if current_tab_name == "liste_salarie_active_directory":
+            output_directory = ACTIVE_DIRECTORY_OUTPUT
+        elif current_tab_name == "ekie":
+            output_directory = EKIE_OUTPUT
+        else:
+            output_directory = OUTPUT_DIRECTORY
         if output_directory.exists():
             os.startfile(output_directory)
         else:

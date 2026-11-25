@@ -2,8 +2,10 @@ from services.paths import project_root
 
 ROOT_DIRECTORY = project_root()
 SWILE_DIRECTORY = ROOT_DIRECTORY / "swile_active_directory"
+EKIE_DIRECTORY = ROOT_DIRECTORY / "ekie"
 INPUT_DIRECTORY = SWILE_DIRECTORY / "in"
 OUTPUT_DIRECTORY = SWILE_DIRECTORY / "out"
+EKIE_OUTPUT = EKIE_DIRECTORY / "out"
 ACTIVE_DIRECTORY_OUTPUT = ROOT_DIRECTORY / "liste_salarie_active_directory" / "out"
 ACTIVE_DIRECTORY_INPUT = ROOT_DIRECTORY / "liste_salarie_active_directory" / "in"
 REQUIRED_COLUMNS = {

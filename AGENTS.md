@@ -25,6 +25,8 @@ sont créés à l’exécution.
   (configuration, progression, dialogue de connexion) dans
   `app/ui/active_directory_panel.py`, tous deux sous forme de mixins de
   `CSEFileManager`; les constantes partagées sont dans `app/ui/constants.py`.
+  Un onglet `ekie` permet de générer un XLSX d’import (`email`, `first_name`,
+  `last_name`, `is_cse_member`) depuis l’export Active Directory.
   La fenêtre principale est optimisée paysage avec les listes Swile et Active
   Directory côte à côte, ainsi qu’un panneau de suivi/résultats redimensionnable
   à côté des onglets. La configuration Active Directory reste repliable et
@@ -58,6 +60,9 @@ sont créés à l’exécution.
   `LIRE_AVANT_LANCEMENT.txt`.
 - `app/cli/swile_active_directory.py` expose les traitements Swile en CLI.
 - `services/swile_service.py` lit/écrit les CSV et orchestre les fonctions métier.
+- `services/ekie_service.py` génère l’export XLSX Ekie et
+  `services/ekie_config.py` gère `ekie.config.json` (liste des e-mails membres
+  CSE marqués `VRAI`).
 - `.github/workflows/ci.yml` exécute les tests unitaires sur chaque pull
   request et chaque push sur `main` (réutilisable via `workflow_call`).
 - `.github/workflows/cd.yml` se déclenche uniquement sur les tags `v*` :
@@ -135,6 +140,12 @@ fichier/traitement pour le flux Swile.
     d’enregistrer le mapping.
     Les archives d’exécutables incluent ce fichier à la racine, à côté de
     l’application.
+- `services/ekie_service.py`
+  - `generate_ekie_employee_list` lit l’export Active Directory et produit un
+    XLSX Ekie (`email`, `first_name`, `last_name`, `is_cse_member`) dans
+    `ekie/out`.
+  - `is_cse_member` vaut `VRAI` si l’e-mail est présent dans
+    `ekie.config.json` (`cse_member_emails`), sinon `FAUX`.
 - `domain/normalization.py`
   - `active_directory_keys` normalise le login de `Identifiant` pour les
     rapprochements. L’export garde le login original dans `Matricule`; le nom

@@ -75,7 +75,7 @@ class InputFilesMixin:
             wraplength=420,
         )
         label.pack(fill="x", pady=(5, 0))
-        self.file_labels[kind] = label
+        self.file_labels.setdefault(kind, []).append(label)
 
         drop_zone = tk.Label(
             card,
@@ -155,16 +155,18 @@ class InputFilesMixin:
 
     def _refresh_file_labels(self):
         """Actualise l’état des fichiers affichés et le statut général."""
-        for kind, label in self.file_labels.items():
+        for kind, labels in self.file_labels.items():
             path = self._current_file(kind)
             if path is None:
                 input_directory = self._input_directory_for_kind(kind)
-                label.configure(
-                    text=f"Aucun fichier trouvé dans {input_directory.name}",
-                    fg="#a33",
-                )
+                for label in labels:
+                    label.configure(
+                        text=f"Aucun fichier trouvé dans {input_directory.name}",
+                        fg="#a33",
+                    )
             else:
-                label.configure(text=f"Prêt : {path.name}", fg="#176b35")
+                for label in labels:
+                    label.configure(text=f"Prêt : {path.name}", fg="#176b35")
 
         missing_main_inputs = [
             TITLES[kind]
