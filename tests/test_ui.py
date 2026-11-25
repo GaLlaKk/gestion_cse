@@ -34,6 +34,7 @@ class DesktopAppTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
         self.swile_config = self.root / "swile.config.json"
+        self.swile_api_config = self.root / "swile_api.config.json"
         self.ad_config = self.root / "liste_salarie_active_directory.config.json"
         self.stack = ExitStack()
         self.stack.enter_context(
@@ -41,6 +42,12 @@ class DesktopAppTests(unittest.TestCase):
         )
         self.stack.enter_context(
             patch("services.swile_config.SWILE_CONFIG_PATH", self.swile_config)
+        )
+        self.stack.enter_context(
+            patch(
+                "services.swile_api_config.SWILE_API_CONFIG_PATH",
+                self.swile_api_config,
+            )
         )
         self.stack.enter_context(
             patch(
@@ -76,10 +83,16 @@ class DesktopAppTests(unittest.TestCase):
         self.assertIn(__version__, app.title())
         self.assertEqual(
             [app.tabs.tab(tab, "text") for tab in app.tabs.tabs()],
-            ["liste_salarie_active_directory", "swile_active_directory", "ekie"],
+            [
+                "liste_salarie_active_directory",
+                "swile_active_directory",
+                "ekie",
+                "swile_api",
+            ],
         )
         self.assertEqual(set(app.addition_filter_sections), {"email"})
         self.assertIn("Configuration à renseigner", app.ekie_config_status.get())
+        self.assertEqual(app.swile_api_subtabs.tab(1, "state"), "disabled")
 
     def test_work_location_mapping_round_trip(self):
         """Vérifie l’enregistrement puis le rechargement du mapping des lieux."""

@@ -162,6 +162,8 @@ jobs:
           Le modèle CSV Swile est embarqué dans l'exécutable.
           Le mapping des lieux et les filtres Swile sont configurables dans
           swile.config.json à côté de l'exécutable.
+          Les identifiants API Swile se configurent dans swile_api.config.json
+          via l'onglet swile_api de l'application.
           Les règles sont parcourues dans l'ordre; tous les termes d'un motif
           doivent apparaître, et la première règle correspondante est utilisée.
           En l'absence de ce fichier, les paramètres actuels sont utilisés.
@@ -176,6 +178,8 @@ jobs:
             dist\swile.config.json
           Copy-Item ekie.config.json `
             dist\ekie.config.json
+          Copy-Item swile_api.config.json `
+            dist\swile_api.config.json
 
       - name: Add runtime instructions (macOS and Linux)
         if: matrix.platform != 'windows'
@@ -188,6 +192,8 @@ jobs:
           Le modèle CSV Swile est embarqué dans l'exécutable.
           Le mapping des lieux et les filtres Swile sont configurables dans
           swile.config.json à côté de l'exécutable.
+          Les identifiants API Swile se configurent dans swile_api.config.json
+          via l'onglet swile_api de l'application.
           Les règles sont parcourues dans l'ordre; tous les termes d'un motif
           doivent apparaître, et la première règle correspondante est utilisée.
           En l'absence de ce fichier, les paramètres actuels sont utilisés.
@@ -202,6 +208,8 @@ jobs:
             dist/swile.config.json
           cp ekie.config.json \
             dist/ekie.config.json
+          cp swile_api.config.json \
+            dist/swile_api.config.json
 
       - name: Package executable (Windows)
         if: matrix.platform == 'windows'
@@ -210,7 +218,8 @@ jobs:
           New-Item -ItemType Directory -Force artifacts | Out-Null
           Compress-Archive `
             -Path dist\GestionCSE.exe, dist\LIRE_AVANT_LANCEMENT.txt, `
-              dist\swile.config.json, dist\ekie.config.json `
+              dist\swile.config.json, dist\ekie.config.json, `
+              dist\swile_api.config.json `
             -DestinationPath artifacts\GestionCSE-${{ github.ref_name }}-windows-${{ runner.arch }}.zip `
             -Force
 
@@ -221,7 +230,8 @@ jobs:
           mkdir -p artifacts
           zip -j "artifacts/GestionCSE-${{ github.ref_name }}-${{ matrix.platform }}-${{ runner.arch }}.zip" \
             dist/GestionCSE dist/LIRE_AVANT_LANCEMENT.txt \
-            dist/swile.config.json dist/ekie.config.json
+            dist/swile.config.json dist/ekie.config.json \
+            dist/swile_api.config.json
 
       - name: Upload platform package
         uses: actions/upload-artifact@v7

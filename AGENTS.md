@@ -27,6 +27,8 @@ sont créés à l’exécution.
   `CSEFileManager`; les constantes partagées sont dans `app/ui/constants.py`.
   Un onglet `ekie` permet de générer un XLSX d’import (`email`, `first_name`,
   `last_name`, `is_cse_member`) depuis l’export Active Directory.
+  Un onglet `swile_api` propose un POC d’intégration Swile (authentification
+  OAuth `client_credentials` et récupération de la liste des salariés).
   La fenêtre principale est optimisée paysage avec les listes Swile et Active
   Directory côte à côte, ainsi qu’un panneau de suivi/résultats redimensionnable
   à côté des onglets. La configuration Active Directory reste repliable et
@@ -63,6 +65,9 @@ sont créés à l’exécution.
 - `services/ekie_service.py` génère l’export XLSX Ekie et
   `services/ekie_config.py` gère `ekie.config.json` (liste des e-mails membres
   CSE marqués `VRAI`).
+- `services/swile_api_service.py` encapsule les appels OAuth/REST Swile
+  (`/v1/oauth/token`, `/v1/employees`) et `services/swile_api_config.py` gère
+  `swile_api.config.json` (secret chiffré localement).
 - `.github/workflows/ci.yml` exécute les tests unitaires sur chaque pull
   request et chaque push sur `main` (réutilisable via `workflow_call`).
 - `.github/workflows/cd.yml` se déclenche uniquement sur les tags `v*` :
