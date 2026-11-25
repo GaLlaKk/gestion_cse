@@ -91,6 +91,50 @@ class SwileServiceTests(unittest.TestCase):
         self.assertTrue(expected_path.exists())
         self.assertIn(str(expected_path), result)
 
+    def test_execute_swile_action_compare_formats_result_paths(self):
+        """Vérifie le format lisible des chemins dans le résumé de comparaison."""
+        swile_no_match_path = self._write_csv(
+            "swile-no-match.csv",
+            ["Prénom", "Nom", "Email", "Matricule"],
+            [
+                {
+                    "Prénom": "Zoé",
+                    "Nom": "Absent",
+                    "Email": "zoe@example.net",
+                    "Matricule": "z9",
+                }
+            ],
+            ";",
+        )
+        output_directory = self.root / "swile_active_directory" / "out"
+
+        with (
+            patch("services.swile_service.datetime") as mocked_datetime,
+            patch("services.swile_service.project_root", return_value=self.root),
+        ):
+            mocked_datetime.now.return_value = datetime(
+                2026, 11, 19, 16, 21, 4
+            )
+            result = execute_swile_action(
+                "compare",
+                swile_no_match_path,
+                self.active_directory_path,
+                output_directory=output_directory,
+            )
+
+        expected_relative_path = (
+            Path("swile_active_directory")
+            / "out"
+            / "collaborators-disables-20261119t162104.csv"
+        )
+        self.assertIn(
+            f"Utilisateurs non trouvés : 1\n-> {expected_relative_path}",
+            result,
+        )
+        self.assertIn("Utilisateurs trouvés : 0", result)
+        self.assertNotIn("Utilisateurs trouvés : 0\n->", result)
+        self.assertNotIn(str(self.root), result)
+
     def _write_csv(self, name, fieldnames, rows, delimiter):
         """Écrit un CSV de test dans le dossier d’entrée temporaire."""
         path = self.input_directory / name

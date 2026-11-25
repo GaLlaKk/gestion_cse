@@ -110,6 +110,9 @@ fichier/traitement pour le flux Swile.
     `patterns` / `value` (`inclure` ou `exclure`). Les valeurs par défaut
     excluent `.ext` et les mots-clés de direction.
 - `services/swile_service.py`
+  - Les résumés de `execute_swile_action` affichent les chemins de sortie
+    relatifs à la racine du projet quand possible, sur une ligne dédiée
+    (`\n-> ...`) et seulement si le compteur associé est supérieur à zéro.
   - `generate_work_location_values` produit un CSV Swile d’attribut
     (`Prénom`, `Nom de famille`, `E-mail`, `Matricule`, `Valeur`) ; les
     personnes incluses sont les Swile trouvées dans Active Directory et les
