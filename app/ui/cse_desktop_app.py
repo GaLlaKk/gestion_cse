@@ -75,7 +75,6 @@ class CSEFileManager(
         self.addition_filter_toggle_controls = {}
         self.addition_filter_expanded = {
             "email": tk.BooleanVar(value=False),
-            "poste": tk.BooleanVar(value=False),
         }
         self.addition_filter_sections = {}
         self.work_location_mapping_controls = []

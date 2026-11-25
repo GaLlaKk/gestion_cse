@@ -82,7 +82,7 @@ class MatchingTests(unittest.TestCase):
 
 
 class AdditionsTests(unittest.TestCase):
-    def test_build_additions_filters_existing_external_management_and_invalid(self):
+    def test_build_additions_filters_existing_external_and_invalid(self):
         """Vérifie les ajouts et exclusions selon les règles métier."""
         current_swile = [
             {
@@ -127,8 +127,6 @@ class AdditionsTests(unittest.TestCase):
 
         (
             additions,
-            ignored,
-            excluded_management,
             excluded_existing,
             excluded_invalid,
             excluded_external,
@@ -136,15 +134,13 @@ class AdditionsTests(unittest.TestCase):
             current_swile, active_directory, "epsilon-france.com"
         )
 
-        self.assertEqual([row["Matricule"] for row in additions], ["j2"])
-        self.assertEqual([row["Matricule"] for row in ignored], ["d3"])
-        self.assertEqual(excluded_management, 1)
+        self.assertEqual([row["Matricule"] for row in additions], ["j2", "d3"])
         self.assertEqual(excluded_existing, 1)
         self.assertEqual(excluded_invalid, 1)
         self.assertEqual(excluded_external, 1)
 
-    def test_build_additions_uses_configured_filters(self):
-        """Vérifie que les règles d’exclusion sont configurables."""
+    def test_build_additions_uses_configured_email_filters(self):
+        """Vérifie que les règles d’exclusion d’e-mail sont configurables."""
         active_directory = [
             {
                 "Nom": "Alice Externe",
@@ -160,7 +156,7 @@ class AdditionsTests(unittest.TestCase):
             },
         ]
 
-        additions, ignored, excluded_management, _, _, excluded_external = (
+        additions, _, _, excluded_external = (
             build_additions(
                 [],
                 active_directory,
@@ -168,13 +164,9 @@ class AdditionsTests(unittest.TestCase):
                 {
                     "email": {
                         "default_value": "inclure",
-                        "rules": [],
-                    },
-                    "poste": {
-                        "default_value": "inclure",
                         "rules": [
                             {
-                                "patterns": [["lead"]],
+                                "patterns": [[".ext@"]],
                                 "value": "exclure",
                             }
                         ],
@@ -185,14 +177,9 @@ class AdditionsTests(unittest.TestCase):
 
         self.assertEqual(
             [row["Email"] for row in additions],
-            ["alice.ext@epsilon-france.com"],
-        )
-        self.assertEqual(
-            [row["Email"] for row in ignored],
             ["bob@epsilon-france.com"],
         )
-        self.assertEqual(excluded_management, 1)
-        self.assertEqual(excluded_external, 0)
+        self.assertEqual(excluded_external, 1)
 
 
 if __name__ == "__main__":

@@ -26,11 +26,6 @@ class SwileConfigEditorMixin:
                 "Filtrage des adresses e-mail "
                 "(fichier de création des ajouts Swile)",
             ),
-            (
-                "poste",
-                "Filtrage des postes "
-                "(fichier de création des ajouts Swile)",
-            ),
         ):
             filter_container = tk.Frame(addition_filters_section)
             filter_container.pack(fill="x")
@@ -39,9 +34,6 @@ class SwileConfigEditorMixin:
                 text=(
                     "Afficher le filtrage des e-mails pour le fichier de "
                     "création des ajouts Swile"
-                    if filter_name == "email"
-                    else "Afficher le filtrage des postes pour le fichier "
-                    "de création des ajouts Swile"
                 ),
                 variable=self.addition_filter_expanded[filter_name],
                 command=lambda selected=filter_name: (
@@ -487,7 +479,7 @@ class SwileConfigEditorMixin:
                 )
         for filter_name, rows in self.addition_filter_rows.items():
             self.addition_filter_expanded[filter_name].set(
-                filter_name == "poste" and not rows
+                filter_name == "email" and not rows
             )
             self._toggle_addition_filter_section(filter_name)
         self.work_location_mapping_dirty = False

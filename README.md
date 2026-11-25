@@ -73,14 +73,13 @@ valeur `Autre` est produite.
 Les règles sont évaluées dans l’ordre et la première correspondance est
 utilisée. Si le fichier est absent, les règles par défaut restent disponibles.
 
-La même configuration `swile.config.json` permet de définir les filtres des
-ajouts par adresse e-mail et par poste. Chaque filtre contient un
-`default_value` (`inclure` ou `exclure`) et des règles `patterns` / `value`;
-les règles sont évaluées dans l’ordre, et la première correspondance décide
-d’inclure ou d’exclure la ligne. Dans un motif, tous les termes séparés par des
-points-virgules doivent correspondre; plusieurs motifs sont alternatifs. La
-configuration initiale continue d’exclure les adresses `.ext` et les postes
-de direction.
+La même configuration `swile.config.json` permet de définir le filtre des
+ajouts par adresse e-mail. Le filtre contient un `default_value` (`inclure` ou
+`exclure`) et des règles `patterns` / `value`; les règles sont évaluées dans
+l’ordre, et la première correspondance décide d’inclure ou d’exclure la ligne.
+Dans un motif, tous les termes séparés par des points-virgules doivent
+correspondre; plusieurs motifs sont alternatifs. La configuration initiale
+continue d’exclure les adresses `.ext`.
 
 ## Fichiers et résultats
 

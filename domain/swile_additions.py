@@ -1,7 +1,4 @@
-import re
-
 from domain.normalization import (
-    DIRECTION_TITLES,
     active_directory_keys,
     normalize_matricule,
     normalize_name,
@@ -14,15 +11,6 @@ DEFAULT_ADDITION_FILTERS = {
         "default_value": "inclure",
         "rules": [
             {"patterns": [[".ext@"]], "value": "exclure"},
-        ],
-    },
-    "poste": {
-        "default_value": "inclure",
-        "rules": [
-            {
-                "patterns": [[token] for token in sorted(DIRECTION_TITLES)],
-                "value": "exclure",
-            },
         ],
     },
 }
@@ -48,8 +36,6 @@ def build_additions(
             existing_keys["name"].add(name)
 
     additions = []
-    ignored_additions = []
-    excluded_management = 0
     excluded_existing = 0
     excluded_invalid = 0
     excluded_external = 0
@@ -93,19 +79,10 @@ def build_additions(
             "Email": email,
             "Matricule": (user.get("Identifiant") or "").strip(),
         }
-        job_title_filter = resolve_filter_value(
-            user.get("Poste") or "", filters["poste"], whole_words=True
-        )
-        if job_title_filter == "exclure":
-            excluded_management += 1
-            ignored_additions.append(addition)
-        else:
-            additions.append(addition)
+        additions.append(addition)
 
     return (
         additions,
-        ignored_additions,
-        excluded_management,
         excluded_existing,
         excluded_invalid,
         excluded_external,
@@ -129,8 +106,4 @@ def resolve_filter_value(value, filter_config, whole_words=False):
 
 def _filter_term_matches(term, value, whole_words=False):
     normalized_term = remove_diacritics(term.strip())
-    if not whole_words:
-        return normalized_term in value
-    title_tokens = set(re.findall(r"[a-z0-9]+", value))
-    term_tokens = re.findall(r"[a-z0-9]+", normalized_term)
-    return bool(term_tokens) and all(token in title_tokens for token in term_tokens)
+    return normalized_term in value

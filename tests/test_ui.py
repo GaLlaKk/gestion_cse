@@ -78,7 +78,7 @@ class DesktopAppTests(unittest.TestCase):
             [app.tabs.tab(tab, "text") for tab in app.tabs.tabs()],
             ["liste_salarie_active_directory", "swile_active_directory"],
         )
-        self.assertEqual(set(app.addition_filter_sections), {"email", "poste"})
+        self.assertEqual(set(app.addition_filter_sections), {"email"})
 
     def test_work_location_mapping_round_trip(self):
         """Vérifie l’enregistrement puis le rechargement du mapping des lieux."""

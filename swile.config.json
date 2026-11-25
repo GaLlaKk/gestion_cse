@@ -35,29 +35,6 @@
           "value": "exclure"
         }
       ]
-    },
-    "poste": {
-      "default_value": "inclure",
-      "rules": [
-        {
-          "patterns": [
-            ["ceo"],
-            ["coo"],
-            ["dg"],
-            ["dga"],
-            ["directrice","ressources humaines"],
-            ["directeur","ressources humaines"],
-            ["responsable","ressources humaines"],
-            ["directeur","département"],
-            ["directrice","département"],
-            ["pdg"],
-            ["president"],
-            ["presidente"],
-            ["Personal Assistant"]
-          ],
-          "value": "exclure"
-        }
-      ]
     }
   }
 }
