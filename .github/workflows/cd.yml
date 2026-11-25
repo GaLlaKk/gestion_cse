@@ -88,6 +88,69 @@ jobs:
           "swile_active_directory/in/collaborators_template_090d2568-c182-4cf4-8b3a-81fefee3a297.csv${{ matrix.data_separator }}swile_active_directory/in"
           cse_desktop_app.py
 
+      - name: Sign desktop executable (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERT_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERT_BASE64 }}
+          WINDOWS_CODESIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERT_PASSWORD }}
+          WINDOWS_CODESIGN_TIMESTAMP_URL: ${{ vars.WINDOWS_CODESIGN_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_CERT_BASE64)) {
+            throw "Le secret WINDOWS_CODESIGN_CERT_BASE64 est requis pour signer GestionCSE.exe."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_CERT_PASSWORD)) {
+            throw "Le secret WINDOWS_CODESIGN_CERT_PASSWORD est requis pour signer GestionCSE.exe."
+          }
+
+          $timestampUrl = $env:WINDOWS_CODESIGN_TIMESTAMP_URL
+          if ([string]::IsNullOrWhiteSpace($timestampUrl)) {
+            $timestampUrl = "http://timestamp.digicert.com"
+          }
+
+          $certificatePath = Join-Path $env:RUNNER_TEMP "windows-codesign.pfx"
+          [System.IO.File]::WriteAllBytes(
+            $certificatePath,
+            [System.Convert]::FromBase64String($env:WINDOWS_CODESIGN_CERT_BASE64)
+          )
+
+          try {
+            $signtoolCommand = Get-Command signtool.exe -ErrorAction SilentlyContinue
+            if (-not $signtoolCommand) {
+              $signtoolPath = Get-ChildItem `
+                -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+                -Filter signtool.exe `
+                -Recurse `
+                -ErrorAction SilentlyContinue | Where-Object {
+                  $_.FullName -like "*\x64\signtool.exe"
+                } | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+            } else {
+              $signtoolPath = $signtoolCommand.Source
+            }
+
+            if ([string]::IsNullOrWhiteSpace($signtoolPath)) {
+              throw "signtool.exe introuvable sur le runner Windows."
+            }
+
+            & $signtoolPath sign `
+              /fd SHA256 `
+              /td SHA256 `
+              /tr $timestampUrl `
+              /f $certificatePath `
+              /p $env:WINDOWS_CODESIGN_CERT_PASSWORD `
+              "dist\GestionCSE.exe"
+            if ($LASTEXITCODE -ne 0) {
+              throw "La signature de GestionCSE.exe a échoué."
+            }
+
+            & $signtoolPath verify /pa /v "dist\GestionCSE.exe"
+            if ($LASTEXITCODE -ne 0) {
+              throw "La vérification de la signature de GestionCSE.exe a échoué."
+            }
+          } finally {
+            Remove-Item $certificatePath -ErrorAction SilentlyContinue
+          }
+
       - name: Add runtime instructions (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh

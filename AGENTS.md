@@ -63,9 +63,11 @@ sont créés à l’exécution.
 - `.github/workflows/cd.yml` se déclenche uniquement sur les tags `v*` :
   il vérifie que le tag pointe sur un commit de `main`, relance la CI,
   construit les exécutables Windows, macOS Intel (runner `macos-15-intel`) et
-  Linux, puis publie les archives ZIP et `SHA256SUMS.txt` sur la release
-  GitHub. Les artefacts incluent le modèle Swile, mais pas la configuration
-  Active Directory.
+  Linux, signe l’exécutable Windows via `signtool` (secrets
+  `WINDOWS_CODESIGN_CERT_BASE64` et `WINDOWS_CODESIGN_CERT_PASSWORD`, horodatage
+  optionnel `WINDOWS_CODESIGN_TIMESTAMP_URL`), puis publie les archives ZIP et
+  `SHA256SUMS.txt` sur la release GitHub. Les artefacts incluent le modèle
+  Swile, mais pas la configuration Active Directory.
 - Flux de travail : branche courte → PR → CI verte → squash merge sur `main` →
   `git tag vX.Y.Z && git push origin vX.Y.Z`. `main` doit être protégée
   (PR et check `Run tests` obligatoires) et les tags `v*` protégés via les
