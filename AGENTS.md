@@ -188,6 +188,11 @@ fichier/traitement pour le flux Swile.
 - L’export configure un journal distinct à chaque lancement dans `log/` et y
   trace les étapes de configuration, d’authentification, de collecte, de
   récupération des photos et d’écriture du CSV, ainsi que les erreurs.
+- Le nettoyage RGPD (`services/file_retention.py`) purge les fichiers de
+  traitement de plus de 90 jours dans `swile_active_directory/in`,
+  `swile_active_directory/out`, `ekie/out`,
+  `liste_salarie_active_directory/in`, `liste_salarie_active_directory/out`
+  et `log/`.
 - Les événements de collecte et de photo identifient le compte concerné
   (adresse, identifiant, ou ID Graph en dernier recours) pour faciliter le
   diagnostic des entrées individuelles.

@@ -6,6 +6,7 @@ from pathlib import Path
 PROCESSING_DIRECTORIES = (
     Path("swile_active_directory") / "in",
     Path("swile_active_directory") / "out",
+    Path("ekie") / "out",
     Path("liste_salarie_active_directory") / "in",
     Path("liste_salarie_active_directory") / "out",
     Path("log"),
