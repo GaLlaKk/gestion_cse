@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import requests
 
@@ -229,80 +229,6 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                     second_logger.removeHandler(handler)
                     handler.close()
 
-    def test_photo_is_downloaded_once_and_reused_from_cache(self):
-        """Vérifie le téléchargement initial et la réutilisation de la photo en cache."""
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            photo_directory = Path(temporary_directory) / "photos"
-            response = Mock(status_code=200, content=b"photo-bytes")
-            response.raise_for_status.return_value = None
-            request_graph = Mock(return_value=response)
-
-            with self.assertLogs(
-                "services.active_directory_export", level="INFO"
-            ) as captured_logs:
-                photo_path = active_directory_export._download_user_photo(
-                    "user-id", "jdupont", photo_directory, request_graph
-                )
-                cached_path = active_directory_export._download_user_photo(
-                    "user-id", "jdupont", photo_directory, request_graph
-                )
-
-            self.assertEqual(
-                photo_path, photo_directory / "jdupont_user-id.jpg"
-            )
-            self.assertEqual(cached_path, photo_path)
-            self.assertEqual(photo_path.read_bytes(), b"photo-bytes")
-            self.assertIn(
-                "Photo récupérée pour le compte jdupont.",
-                captured_logs.output[0],
-            )
-            self.assertIn(
-                "Photo réutilisée depuis le cache pour le compte jdupont.",
-                captured_logs.output[1],
-            )
-            request_graph.assert_called_once_with(
-                "https://graph.microsoft.com/v1.0/users/user-id/photo/$value"
-            )
-
-    def test_missing_photo_is_not_written(self):
-        """Vérifie qu’une réponse Graph 404 ne crée pas de fichier photo."""
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            photo_directory = Path(temporary_directory) / "photos"
-            response = Mock(status_code=404)
-            request_graph = Mock(return_value=response)
-
-            with self.assertLogs(
-                "services.active_directory_export", level="INFO"
-            ) as captured_logs:
-                photo_path = active_directory_export._download_user_photo(
-                    "user-id", "jdupont", photo_directory, request_graph
-                )
-
-            self.assertIsNone(photo_path)
-            self.assertFalse(photo_directory.exists())
-            self.assertIn(
-                "Aucune photo disponible pour le compte jdupont.",
-                captured_logs.output[0],
-            )
-            request_graph.assert_called_once()
-
-    def test_photo_filename_sanitizes_windows_path_characters(self):
-        """Vérifie la suppression des caractères interdits dans le nom de photo."""
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            photo_directory = Path(temporary_directory) / "photos"
-            response = Mock(status_code=200, content=b"photo-bytes")
-            response.raise_for_status.return_value = None
-            request_graph = Mock(return_value=response)
-
-            photo_path = active_directory_export._download_user_photo(
-                "user-id",
-                "user/name",
-                photo_directory,
-                request_graph,
-            )
-
-            self.assertEqual(photo_path.name, "user_name_user-id.jpg")
-
     def test_device_code_is_forwarded_to_callback(self):
         """Vérifie que l’URL et le code d’appareil sont transmis au callback."""
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -385,6 +311,8 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["Email"], "start@example.com")
             self.assertEqual(rows[0]["Lieu de travail"], "Paris")
+            self.assertNotIn("Poste", rows[0])
+            self.assertNotIn("Business Unit", rows[0])
             self.assertEqual(list(output_directory.glob("*.tmp")), [])
             self.assertEqual(
                 progress_updates,
@@ -396,55 +324,30 @@ class ActiveDirectoryExportTests(unittest.TestCase):
                 ],
             )
 
-    def test_export_downloads_photos_in_parallel_without_failing_on_error(self):
-        """Vérifie que les photos sont téléchargées et qu’une erreur reste non bloquante."""
+    def test_export_cleans_old_processing_files_before_collection(self):
+        """Vérifie le lancement du nettoyage RGPD avant la collecte AD."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             config_path = write_config(root)
             output_directory = root / "out"
             output_directory.mkdir()
 
-            def user(identifier, mail):
-                return {
-                    "id": identifier,
-                    "displayName": identifier,
-                    "mail": mail,
-                    "userPrincipalName": mail,
-                }
-
             def request_graph(url, **_kwargs):
                 if "/users/start@example.com?" in url:
-                    return graph_response(payload=user("root-id", "start@example.com"))
-                if "/directReports" in url and "start@example.com" in url:
-                    return graph_response(
-                        payload={
-                            "value": [
-                                {"id": "child-id", "mail": "child@example.com"}
-                            ]
-                        }
-                    )
-                if "/users/child-id?" in url:
-                    return graph_response(payload=user("child-id", "child@example.com"))
-                if "/directReports" in url:
+                    return graph_response(payload=start_user_payload())
+                if "/users/start@example.com/directReports" in url:
                     return graph_response(payload={"value": []})
-                if "/users/root-id/photo/$value" in url:
-                    return graph_response(content=b"jpg")
-                if "/users/child-id/photo/$value" in url:
-                    raise requests.ConnectionError("coupure photo")
                 self.fail(f"URL Graph inattendue : {url}")
 
-            with patched_export(
-                config_path, output_directory, request_graph, patch_sleep=True
-            ) as logger:
-                result_path = active_directory_export.run_active_directory_export(
-                    download_photos=True
-                )
+            with (
+                patched_export(config_path, output_directory, request_graph),
+                patch.object(
+                    active_directory_export, "cleanup_processing_files"
+                ) as cleanup_mock,
+            ):
+                active_directory_export.run_active_directory_export()
 
-            self.assertIsNotNone(result_path)
-            self.assertTrue(
-                (output_directory / "photos" / "start_root-id.jpg").is_file()
-            )
-            logger.exception.assert_called()
+            cleanup_mock.assert_called_once_with(config_path.parent, ANY)
 
     def test_export_does_not_publish_csv_when_no_users_are_exported(self):
         """Vérifie qu’aucun CSV d’en-tête seul n’est publié."""

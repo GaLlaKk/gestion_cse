@@ -126,9 +126,10 @@ def _validate_filter_rule(index, rule, filter_name, config_path):
 
 
 def _validate_addition_filters(filters, config_path):
-    """Valide les règles de filtrage des e-mails et des postes."""
+    """Valide les règles de filtrage des ajouts."""
     if not isinstance(filters, dict):
         raise ValueError(f"'filters' doit être un objet JSON : {config_path}")
+    filters = {key: value for key, value in filters.items() if key != "poste"}
     unknown_keys = filters.keys() - DEFAULT_ADDITION_FILTERS.keys()
     if unknown_keys:
         raise ValueError(

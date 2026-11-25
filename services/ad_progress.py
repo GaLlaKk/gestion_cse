@@ -5,7 +5,7 @@ from services.csv_files import read_csv
 
 LOGGER_NAME = "services.active_directory_export"
 DEFAULT_ESTIMATED_PEOPLE = 500
-PROGRESS_EXPORT_COLUMNS = {"Nom", "Email", "Identifiant", "Poste"}
+PROGRESS_EXPORT_COLUMNS = {"Nom", "Email", "Identifiant"}
 
 
 def estimate_previous_export_count(output_dir):

@@ -62,15 +62,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--ignored-output-file",
-        type=Path,
-        default=None,
-        help=(
-            "Fichier de sortie pour les ajouts écartés (par défaut : "
-            "même dossier, avec ignored-additions dans le nom)."
-        ),
-    )
-    parser.add_argument(
         "--report-domain",
         default="epsilon-france.com",
         help="Domaine des employés à inclure (par défaut : epsilon-france.com).",
@@ -97,7 +88,6 @@ def main():
             template_path=template_path,
             output_directory=args.output_directory,
             output_path=args.output_file,
-            ignored_output_path=args.ignored_output_file,
             report_domain=args.report_domain,
         )
     )

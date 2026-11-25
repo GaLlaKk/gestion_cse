@@ -245,10 +245,6 @@ class SwileServiceTests(unittest.TestCase):
             [[".ext@"]],
         )
         self.assertEqual(filters["email"]["rules"][0]["value"], "exclure")
-        self.assertIn(
-            ["directrice"],
-            filters["poste"]["rules"][0]["patterns"],
-        )
 
     def test_addition_filters_share_configuration_with_work_locations(self):
         """Vérifie que la sauvegarde du mapping conserve les filtres définis."""
@@ -262,12 +258,6 @@ class SwileServiceTests(unittest.TestCase):
                 "default_value": "inclure",
                 "rules": [
                     {"patterns": [[".externe"]], "value": "exclure"}
-                ],
-            },
-            "poste": {
-                "default_value": "inclure",
-                "rules": [
-                    {"patterns": [["responsable"]], "value": "exclure"}
                 ],
             },
         }
@@ -290,10 +280,6 @@ class SwileServiceTests(unittest.TestCase):
                     "filters": {
                         "email": {
                             "default_value": "exclure",
-                            "rules": [],
-                        },
-                        "poste": {
-                            "default_value": "inclure",
                             "rules": [],
                         },
                     },
@@ -353,13 +339,9 @@ class SwileServiceTests(unittest.TestCase):
                     "filters": {
                         "email": {
                             "default_value": "inclure",
-                            "rules": [],
-                        },
-                        "poste": {
-                            "default_value": "inclure",
                             "rules": [
                                 {
-                                    "patterns": [["lead"]],
+                                    "patterns": [[".ext@"]],
                                     "value": "exclure",
                                 }
                             ],
@@ -381,11 +363,10 @@ class SwileServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(result[0], 1)
-        self.assertEqual(result[2], 1)
-        self.assertEqual(result[6], 0)
+        self.assertEqual(result[3], 1)
         with output_path.open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.DictReader(stream, delimiter=";"))
-        self.assertEqual(rows[0]["Email"], "alice.ext@epsilon-france.com")
+        self.assertEqual(rows[0]["Email"], "bob@epsilon-france.com")
 
     def test_invalid_work_location_mapping_does_not_replace_file(self):
         """Vérifie qu’un mapping invalide ne modifie pas le fichier enregistré."""
@@ -483,9 +464,8 @@ class SwileServiceTests(unittest.TestCase):
             "epsilon-france.com",
         )
 
-        self.assertEqual((result[0], result[2]), (0, 0))
+        self.assertEqual((result[0], result[1]), (0, 2))
         self.assertFalse(output_path.exists())
-        self.assertFalse(result[1].exists())
 
     def test_generate_work_location_values_does_not_write_empty_file(self):
         """Vérifie que les valeurs de lieu ne créent pas de CSV vide."""
@@ -530,8 +510,7 @@ class SwileServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(result[0], 1)
-        self.assertEqual(result[2], 0)
-        self.assertFalse(result[1].exists())
+        self.assertEqual(result[1], 1)
         with output_path.open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.DictReader(stream, delimiter=";"))
         self.assertEqual(rows[0]["Matricule"], "J-2")
@@ -786,15 +765,6 @@ class SwileServiceTests(unittest.TestCase):
                                 }
                             ],
                         },
-                        "poste": {
-                            "default_value": "inclure",
-                            "rules": [
-                                {
-                                    "patterns": [["directeur"]],
-                                    "value": "exclure",
-                                }
-                            ],
-                        },
                     }
                 }
             ),
@@ -813,18 +783,26 @@ class SwileServiceTests(unittest.TestCase):
             filters_config_path=filters_config_path,
         )
 
-        self.assertEqual(generated_count, 2)
+        self.assertEqual(generated_count, 3)
         self.assertFalse(missing_work_location_column)
         with output_path.open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.DictReader(stream, delimiter=";"))
         self.assertEqual(
             [row["E-mail"] for row in rows],
-            ["alice@epsilon-france.com", "added@epsilon-france.com"],
+            [
+                "alice@epsilon-france.com",
+                "added@epsilon-france.com",
+                "director@epsilon-france.com",
+            ],
         )
         self.assertEqual(
-            [row["Valeur"] for row in rows], ["Paris 145", "Lille 5.9"]
+            [row["Valeur"] for row in rows],
+            ["Paris 145", "Lille 5.9", "Paris 133"],
         )
-        self.assertEqual([row["Matricule"] for row in rows], ["martin_a", "added_a"])
+        self.assertEqual(
+            [row["Matricule"] for row in rows],
+            ["martin_a", "added_a", "director_a"],
+        )
 
 
 if __name__ == "__main__":

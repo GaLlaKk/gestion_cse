@@ -3,7 +3,6 @@ import json
 import logging
 import tempfile
 import time
-from contextlib import contextmanager
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +14,6 @@ from services.active_directory_config import (
     get_config_path,
     validate_config,
 )
-from services.ad_photos import download_user_photo as _download_user_photo
 from services.ad_progress import (
     DEFAULT_ESTIMATED_PEOPLE,
     estimate_previous_export_count,
@@ -29,15 +27,14 @@ from services.ad_state import (
     save_resume_state as _save_resume_state,
 )
 from services.csv_files import read_csv
+from services.file_retention import cleanup_processing_files
 from services.graph_client import GraphClient
 
 CSV_HEADERS = (
     "Nom",
     "Email",
     "Identifiant",
-    "Poste",
     "Lieu de travail",
-    "Business Unit",
     "Manager Email",
     "Collaborateurs à charge",
 )
@@ -96,9 +93,7 @@ def _csv_row_from_user_entry(user_entry):
         "Nom": user_entry["identity"]["name"],
         "Email": user_entry["identity"]["email"],
         "Identifiant": user_entry["identity"]["username"],
-        "Poste": user_entry["professional_info"]["job_title"],
         "Lieu de travail": user_entry["professional_info"]["work_location"],
-        "Business Unit": user_entry["professional_info"]["business_unit"],
         "Manager Email": user_entry["hierarchy"]["manager_email"],
         "Collaborateurs à charge": ", ".join(
             user_entry["hierarchy"]["direct_reports"]
@@ -108,7 +103,6 @@ def _csv_row_from_user_entry(user_entry):
 
 MAX_INTERMEDIATE_LEVELS = 2
 MAX_CONCURRENT_REQUESTS = 6
-MAX_PHOTO_WORKERS = 4
 BATCH_ACCOUNTS = 10
 RESUME_SAVE_INTERVAL_SECONDS = 5.0
 
@@ -183,7 +177,6 @@ class ActiveDirectoryCollector:
         graph,
         logger,
         output_dir,
-        download_photos=False,
         on_progress=None,
         estimated_people=DEFAULT_ESTIMATED_PEOPLE,
     ):
@@ -192,10 +185,8 @@ class ActiveDirectoryCollector:
         self.graph = graph
         self.logger = logger
         self.output_dir = output_dir
-        self.download_photos = download_photos
         self.on_progress = on_progress
         self.estimated_people = estimated_people
-        self._photo_executor = None
 
     def is_report_domain_email(self, email):
         """Indique si l’adresse appartient au domaine de rapport."""
@@ -242,7 +233,7 @@ class ActiveDirectoryCollector:
             urls.append(
                 f"/users/{identifier}"
                 "?$select=id,displayName,mail,userPrincipalName,"
-                "jobTitle,department,officeLocation"
+                "officeLocation"
                 "&$expand=manager($select=mail)"
             )
             if with_direct_reports:
@@ -297,8 +288,6 @@ class ActiveDirectoryCollector:
                 ),
             },
             "professional_info": {
-                "job_title": user_info.get("jobTitle"),
-                "business_unit": user_info.get("department"),
                 "work_location": user_info.get("officeLocation"),
             },
             "hierarchy": {
@@ -317,35 +306,8 @@ class ActiveDirectoryCollector:
         }
         return user_entry, direct_reports_data, is_epsilon_user
 
-    @contextmanager
-    def photo_downloads(self):
-        """Active le téléchargement parallèle des photos et attend sa fin."""
-        with ThreadPoolExecutor(max_workers=MAX_PHOTO_WORKERS) as executor:
-            self._photo_executor = executor
-            try:
-                yield
-            finally:
-                self._photo_executor = None
-
-    def _download_photo(self, user_entry):
-        """Télécharge la photo d’un compte ; une erreur n’interrompt pas l’export."""
-        try:
-            _download_user_photo(
-                user_entry["id"],
-                user_entry["identity"]["username"],
-                self.output_dir / "photos",
-                self.graph.get,
-            )
-        except Exception:
-            self.logger.exception(
-                "Impossible de récupérer la photo du compte %s.",
-                _account_reference(user_entry),
-            )
-
     def _export_user(self, writer, user_entry, keys_by_type):
-        """Planifie la photo si demandée, puis écrit la ligne du compte."""
-        if self.download_photos and self._photo_executor is not None:
-            self._photo_executor.submit(self._download_photo, user_entry)
+        """Écrit la ligne du compte exporté."""
         row = _csv_row_from_user_entry(user_entry)
         writer.writerow([row[column] for column in CSV_HEADERS])
         _add_exported_keys(keys_by_type, row)
@@ -400,7 +362,7 @@ class ActiveDirectoryCollector:
 
         Les comptes en attente sont regroupés en lots traités en parallèle ; dès
         qu’un lot se termine, ses rapports directs alimentent la file sans
-        attendre la fin d’un niveau. Les photos sont téléchargées en parallèle.
+        attendre la fin d’un niveau.
         """
         waiting = {
             identifier: (is_root, levels)
@@ -515,7 +477,7 @@ class ActiveDirectoryCollector:
         _, previous_rows = read_csv(
             previous_export_path,
             ",",
-            {"Nom", "Email", "Identifiant", "Poste"},
+            {"Nom", "Email", "Identifiant"},
         )
         missing_rows = [
             row
@@ -612,7 +574,6 @@ def _create_temporary_export(output_dir, csv_filename):
 
 def run_active_directory_export(
     on_device_code=None,
-    download_photos=False,
     previous_export_path=None,
     on_progress=None,
 ):
@@ -621,6 +582,7 @@ def run_active_directory_export(
         previous_export_path = Path(previous_export_path)
     config_path = get_config_path()
     logger, output_dir, date_prefix = initialize_output(config_path)
+    cleanup_processing_files(config_path.parent, logger)
     estimated_people = estimate_previous_export_count(output_dir)
     if on_progress is not None:
         on_progress(0, estimated_people, "connecting")
@@ -632,14 +594,8 @@ def run_active_directory_export(
         GraphClient(access_token, logger),
         logger,
         output_dir,
-        download_photos=download_photos,
         on_progress=on_progress,
         estimated_people=estimated_people,
-    )
-
-    logger.info(
-        "Récupération des photos %s.",
-        "activée" if download_photos else "désactivée",
     )
     logger.info("Démarrage de la collecte de la hiérarchie Active Directory.")
     resume_state_path = output_dir / RESUME_STATE_FILENAME
@@ -668,16 +624,15 @@ def run_active_directory_export(
             "a", newline="", encoding="utf-8"
         ) as output_stream:
             writer = csv.writer(output_stream)
-            with collector.photo_downloads():
-                collector.collect_hierarchy(
-                    writer,
-                    state,
-                    resume_state_path,
-                    flush=output_stream.flush,
-                )
-                appended_from_previous = collector.append_previous_users(
-                    writer, state, previous_export_path
-                )
+            collector.collect_hierarchy(
+                writer,
+                state,
+                resume_state_path,
+                flush=output_stream.flush,
+            )
+            appended_from_previous = collector.append_previous_users(
+                writer, state, previous_export_path
+            )
 
         if state.exported_count + appended_from_previous:
             state.temporary_path.replace(csv_path)

@@ -35,7 +35,6 @@ def _additions_summary(
     template_path,
     output_directory,
     output_path,
-    ignored_output_path,
     report_domain,
 ):
     """Génère les ajouts et retourne les lignes de résumé."""
@@ -53,9 +52,6 @@ def _additions_summary(
         )
     (
         addition_count,
-        ignored_path,
-        ignored_count,
-        excluded_management,
         excluded_existing,
         excluded_invalid,
         excluded_external,
@@ -65,13 +61,9 @@ def _additions_summary(
         template_path,
         additions_output_path,
         report_domain,
-        ignored_output_path,
     )
     lines = [
         f"Ajouts à importer : {addition_count} -> {additions_output_path}",
-        "Ajouts ignorés (filtre sur le poste) : "
-        f"{ignored_count} -> {ignored_path}",
-        f"Lignes exclues par le filtre de poste : {excluded_management}",
         f"Lignes exclues par le filtre d’e-mail : {excluded_external}",
         f"Déjà présents dans Swile : {excluded_existing}",
     ]
@@ -123,7 +115,6 @@ def execute_swile_action(
     template_path=None,
     output_directory=None,
     output_path=None,
-    ignored_output_path=None,
     report_domain="epsilon-france.com",
 ):
     """Orchestre comparaison, ajouts Swile ou génération des lieux."""
@@ -143,7 +134,6 @@ def execute_swile_action(
                 template_path,
                 output_directory,
                 output_path,
-                ignored_output_path,
                 report_domain,
             )
         )
@@ -200,7 +190,6 @@ def generate_additions(
     template_path,
     output_path,
     report_domain,
-    ignored_output_path=None,
     filters_config_path=None,
 ):
     """Génère les CSV d’ajouts Swile et d’ajouts ignorés."""
@@ -213,12 +202,10 @@ def generate_additions(
         {"Prénom", "Nom", "Email", "Matricule"},
     )
     _, active_directory_users = read_csv(
-        active_directory_path, ",", {"Nom", "Email", "Identifiant", "Poste"}
+        active_directory_path, ",", {"Nom", "Email", "Identifiant"}
     )
     (
         additions,
-        ignored_additions,
-        excluded_management,
         excluded_existing,
         excluded_invalid,
         excluded_external,
@@ -230,20 +217,7 @@ def generate_additions(
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    if ignored_output_path is None:
-        if "-additions" in output_path.stem:
-            ignored_stem = output_path.stem.replace(
-                "-additions", "-ignored-additions", 1
-            )
-        else:
-            ignored_stem = f"{output_path.stem}-ignored-additions"
-        ignored_output_path = output_path.with_name(f"{ignored_stem}.csv")
-    ignored_output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    for csv_path, users in (
-        (output_path, additions),
-        (ignored_output_path, ignored_additions),
-    ):
+    for csv_path, users in ((output_path, additions),):
         if not users:
             continue
         with csv_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
@@ -258,9 +232,6 @@ def generate_additions(
 
     return (
         len(additions),
-        ignored_output_path,
-        len(ignored_additions),
-        excluded_management,
         excluded_existing,
         excluded_invalid,
         excluded_external,
@@ -278,7 +249,7 @@ LOCATION_VALUE_COLUMNS = (
 
 def _read_active_directory_users_with_locations(active_directory_path):
     """Lit l’export AD; indique si la colonne « Lieu de travail » manque."""
-    required_columns = {"Nom", "Email", "Identifiant", "Poste"}
+    required_columns = {"Nom", "Email", "Identifiant"}
     try:
         _, users = read_csv(
             active_directory_path,

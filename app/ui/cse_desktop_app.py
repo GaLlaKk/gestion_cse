@@ -67,7 +67,6 @@ class CSEFileManager(
         self.is_running = False
         self.current_action = None
         self.device_code_dialog = None
-        self.download_photos = tk.BooleanVar(value=False)
         self.addition_filter_rows = {}
         self.addition_filter_default_values = {}
         self.addition_filter_default_entries = {}
@@ -76,7 +75,6 @@ class CSEFileManager(
         self.addition_filter_toggle_controls = {}
         self.addition_filter_expanded = {
             "email": tk.BooleanVar(value=False),
-            "poste": tk.BooleanVar(value=False),
         }
         self.addition_filter_sections = {}
         self.work_location_mapping_controls = []
@@ -226,11 +224,6 @@ class CSEFileManager(
             "Générer la liste Active Directory",
             "active_directory",
         )
-        ttk.Checkbutton(
-            generation_section,
-            text="Récupérer les photos (les photos déjà téléchargées seront conservées)",
-            variable=self.download_photos,
-        ).pack(anchor="w", pady=(3, 0))
         self._build_active_directory_config_section(active_directory_primary)
         self._build_previous_export_section(active_directory_optional)
 
@@ -405,7 +398,6 @@ class CSEFileManager(
                         None,
                         None,
                         None,
-                        self.download_photos.get(),
                         previous_export_path,
                     ),
                     daemon=True,
@@ -460,7 +452,6 @@ class CSEFileManager(
         swile_path,
         active_directory_path,
         template_path,
-        download_photos=False,
         previous_export_path=None,
     ):
         """Exécute l’export AD ou l’action Swile hors du thread graphique."""
@@ -471,7 +462,6 @@ class CSEFileManager(
                 if action == "active_directory":
                     active_directory_export_path = run_active_directory_export(
                         on_device_code=self._schedule_device_code_dialog,
-                        download_photos=download_photos,
                         previous_export_path=previous_export_path,
                         on_progress=self._schedule_active_directory_progress,
                     )

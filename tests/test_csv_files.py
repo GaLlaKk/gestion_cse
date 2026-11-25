@@ -56,17 +56,17 @@ class CsvFilesTests(unittest.TestCase):
             output_directory = root / "out"
             input_directory.mkdir()
             output_directory.mkdir()
-            required_columns = ["Nom", "Email", "Identifiant", "Poste"]
+            required_columns = ["Nom", "Email", "Identifiant"]
             old_path = input_directory / "export-manuel.csv"
             old_path.write_text(
-                "Nom,Email,Identifiant,Poste\n"
-                "Ancien,ancien@example.com,ancien,Analyste\n",
+                "Nom,Email,Identifiant\n"
+                "Ancien,ancien@example.com,ancien\n",
                 encoding="utf-8",
             )
             latest_path = output_directory / "20261104_export.csv"
             latest_path.write_text(
-                "Nom,Email,Identifiant,Poste\n"
-                "Récent,recent@example.com,recent,Analyste\n",
+                "Nom,Email,Identifiant\n"
+                "Récent,recent@example.com,recent\n",
                 encoding="utf-8",
             )
             invalid_path = output_directory / "export-invalide.csv"

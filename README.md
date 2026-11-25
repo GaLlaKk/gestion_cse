@@ -37,8 +37,7 @@ indications affichées dans la fenêtre et saisissez le code de vérification.
 ### 3. Générer et comparer les listes
 
 1. Dans l’onglet **liste_salarie_active_directory**, cliquez sur
-   **Générer la liste Active Directory**. La récupération des photos est
-   facultative.
+   **Générer la liste Active Directory**.
 2. Dans l’onglet **swile_active_directory**, sélectionnez le fichier Swile et
    le fichier Active Directory avec **Parcourir…**, ou déposez-les dans les
    zones prévues. Le bouton **Copier le dernier export** permet de reprendre
@@ -74,14 +73,13 @@ valeur `Autre` est produite.
 Les règles sont évaluées dans l’ordre et la première correspondance est
 utilisée. Si le fichier est absent, les règles par défaut restent disponibles.
 
-La même configuration `swile.config.json` permet de définir les filtres des
-ajouts par adresse e-mail et par poste. Chaque filtre contient un
-`default_value` (`inclure` ou `exclure`) et des règles `patterns` / `value`;
-les règles sont évaluées dans l’ordre, et la première correspondance décide
-d’inclure ou d’exclure la ligne. Dans un motif, tous les termes séparés par des
-points-virgules doivent correspondre; plusieurs motifs sont alternatifs. La
-configuration initiale continue d’exclure les adresses `.ext` et les postes
-de direction.
+La même configuration `swile.config.json` permet de définir le filtre des
+ajouts par adresse e-mail. Le filtre contient un `default_value` (`inclure` ou
+`exclure`) et des règles `patterns` / `value`; les règles sont évaluées dans
+l’ordre, et la première correspondance décide d’inclure ou d’exclure la ligne.
+Dans un motif, tous les termes séparés par des points-virgules doivent
+correspondre; plusieurs motifs sont alternatifs. La configuration initiale
+continue d’exclure les adresses `.ext`.
 
 ## Fichiers et résultats
 
@@ -103,9 +101,9 @@ Le fichier Swile doit contenir au minimum les colonnes `Prénom`, `Nom`,
 `Email` et `Matricule`.
 
 Le fichier Active Directory doit contenir au minimum les colonnes `Nom`,
-`Email`, `Identifiant` et `Poste` pour la comparaison et la préparation des
-ajouts. La colonne `Lieu de travail` est utilisée pour générer les valeurs de
-lieu; si elle est absente, la valeur par défaut est appliquée.
+`Email` et `Identifiant` pour la comparaison et la préparation des ajouts.
+La colonne `Lieu de travail` est utilisée pour générer les valeurs de lieu;
+si elle est absente, la valeur par défaut est appliquée.
 
 ## Dépannage
 
