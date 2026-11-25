@@ -16,14 +16,17 @@ class FileRetentionTests(unittest.TestCase):
             old_processing = (
                 root / "swile_active_directory" / "out" / "old.csv"
             )
+            old_ekie_processing = root / "ekie" / "out" / "old.xlsx"
             new_processing = (
                 root / "liste_salarie_active_directory" / "out" / "new.csv"
             )
             old_non_processing = root / "services" / "do_not_touch.py"
             old_processing.parent.mkdir(parents=True, exist_ok=True)
+            old_ekie_processing.parent.mkdir(parents=True, exist_ok=True)
             new_processing.parent.mkdir(parents=True, exist_ok=True)
             old_non_processing.parent.mkdir(parents=True, exist_ok=True)
             old_processing.write_text("old", encoding="utf-8")
+            old_ekie_processing.write_text("old-ekie", encoding="utf-8")
             new_processing.write_text("new", encoding="utf-8")
             old_non_processing.write_text("safe", encoding="utf-8")
 
@@ -32,14 +35,16 @@ class FileRetentionTests(unittest.TestCase):
             ).timestamp()
             now_timestamp = datetime.now().timestamp()
             os.utime(old_processing, (old_timestamp, old_timestamp))
+            os.utime(old_ekie_processing, (old_timestamp, old_timestamp))
             os.utime(old_non_processing, (old_timestamp, old_timestamp))
             os.utime(new_processing, (now_timestamp, now_timestamp))
 
             logger = Mock()
             deleted_count = cleanup_processing_files(root, logger)
 
-            self.assertEqual(deleted_count, 1)
+            self.assertEqual(deleted_count, 2)
             self.assertFalse(old_processing.exists())
+            self.assertFalse(old_ekie_processing.exists())
             self.assertTrue(new_processing.exists())
             self.assertTrue(old_non_processing.exists())
             logger.info.assert_called_once()

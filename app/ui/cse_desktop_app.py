@@ -17,6 +17,7 @@ from app.ui.constants import (
 )
 from app.ui.active_directory_panel import ActiveDirectoryPanelMixin
 from app.ui.input_files import InputFilesMixin
+from app.ui.swile_api_panel import SwileApiPanelMixin
 from app.ui.swile_config_editor import SwileConfigEditorMixin
 from services.version import __version__
 from services.swile_service import (
@@ -51,6 +52,7 @@ class _OutputWriter:
 class CSEFileManager(
     InputFilesMixin,
     SwileConfigEditorMixin,
+    SwileApiPanelMixin,
     ActiveDirectoryPanelMixin,
     TkinterDnD.Tk,
 ):
@@ -83,6 +85,9 @@ class CSEFileManager(
         self.work_location_mapping_controls = []
         self.ekie_config_controls = []
         self.ekie_cse_members_dirty = False
+        self.swile_api_controls = []
+        self.swile_api_connected = False
+        self.swile_api_client = None
         self.scrollable_tab_areas = {}
         self.bind_all("<MouseWheel>", self._on_tab_mousewheel)
         self.bind_all("<Button-4>", self._on_tab_mousewheel)
@@ -93,12 +98,15 @@ class CSEFileManager(
         active_directory_tab = tk.Frame(self.tabs)
         swile_tab = tk.Frame(self.tabs, padx=12, pady=12)
         ekie_tab = tk.Frame(self.tabs, padx=12, pady=12)
+        swile_api_tab = tk.Frame(self.tabs, padx=12, pady=12)
         self.tabs.add(active_directory_tab, text="liste_salarie_active_directory")
         self.tabs.add(swile_tab, text="swile_active_directory")
         self.tabs.add(ekie_tab, text="ekie")
+        self.tabs.add(swile_api_tab, text="swile_api")
         self._build_active_directory_tab(active_directory_tab)
         self._build_swile_tab(swile_tab)
         self._build_ekie_tab(ekie_tab)
+        self._build_swile_api_tab(swile_api_tab)
         self._load_work_location_mapping()
         self._load_ekie_config()
         self._load_active_directory_config()
@@ -727,6 +735,7 @@ class CSEFileManager(
             self.active_directory_config_controls
             + self.work_location_mapping_controls
             + self.ekie_config_controls
+            + self.swile_api_controls
         ):
             control.configure(state=state)
         if state == "normal":

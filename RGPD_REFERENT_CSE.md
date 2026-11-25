@@ -7,7 +7,9 @@ Ce document est destiné au **référent RGPD du CSE** pour consultation interne
 L’application **Gestion CSE** sert à :
 - générer un export salariés depuis Active Directory,
 - comparer cet export avec les fichiers Swile,
-- préparer des fichiers d’ajouts et de valeurs de lieu de travail.
+- préparer des fichiers d’ajouts et de valeurs de lieu de travail,
+- générer un export Ekie (`.xlsx`) des salariés,
+- récupérer la liste des salariés via l’API Swile (POC).
 
 Ce document couvre les traitements de données personnelles opérés par l’application dans ce périmètre.
 
@@ -19,6 +21,7 @@ Ce document couvre les traitements de données personnelles opérés par l’app
 - Identifiant / matricule
 - Lieu de travail (si disponible)
 - Données de rapprochement entre fichiers (résultats de comparaison)
+- Identifiant salarié Swile (`id`) dans le cadre du POC API (affichage UI)
 
 ### Données explicitement supprimées du périmètre (mise en conformité #49)
 - **Photos des salariés** (collecte supprimée)
@@ -30,7 +33,9 @@ Ce document couvre les traitements de données personnelles opérés par l’app
 Les traitements sont limités aux finalités suivantes :
 1. comparaison de listes salariés (AD vs Swile),
 2. préparation des ajouts nécessaires,
-3. production des valeurs de lieu de travail.
+3. production des valeurs de lieu de travail,
+4. production de l’export salariés Ekie,
+5. consultation de la liste des salariés Swile (POC API).
 
 Principe appliqué : **minimisation des données** (article 5.1.c RGPD).  
 Les données non nécessaires aux finalités (photos, pôle, fonction) ne sont plus collectées.
@@ -51,6 +56,7 @@ Mesure technique en place :
 Répertoires concernés :
 - `swile_active_directory/in`
 - `swile_active_directory/out`
+- `ekie/out`
 - `liste_salarie_active_directory/in`
 - `liste_salarie_active_directory/out`
 - `log`
@@ -64,7 +70,8 @@ Mesures techniques déjà appliquées :
 - purge automatique des fichiers anciens,
 - journalisation technique de traitement,
 - séparation des dossiers d’entrée/sortie,
-- configuration locale des paramètres (fichiers de config).
+- configuration locale des paramètres (fichiers de config),
+- stockage local chiffré du `client_secret` Swile API.
 
 Mesures organisationnelles recommandées :
 - accès restreint aux dossiers de traitement (principe du moindre privilège),
@@ -105,7 +112,9 @@ En cas de suspicion de violation :
 - [ ] Export AD sans colonnes photo/pôle/fonction
 - [ ] Filtrage par poste absent de la configuration et du traitement
 - [ ] Purge > 90 jours active
+- [ ] Purge > 90 jours active sur `ekie/out`
 - [ ] Dossiers d’export à accès restreint
+- [ ] Accès restreint au fichier `swile_api.config.json`
 - [ ] Registre de traitement mis à jour
 - [ ] Procédure d’exercice des droits documentée
 - [ ] Procédure de violation de données connue et testée
@@ -118,6 +127,7 @@ Mise en conformité RGPD #49 :
 3. suppression de la récupération du pôle,
 4. suppression de la récupération de la fonction (poste),
 5. suppression du filtrage basé sur les postes.
+6. extension de la purge RGPD à `ekie/out` (exports `.xlsx` salariés).
 
 ---
 
