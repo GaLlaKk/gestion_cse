@@ -102,9 +102,9 @@ Le fichier Swile doit contenir au minimum les colonnes `Prénom`, `Nom`,
 `Email` et `Matricule`.
 
 Le fichier Active Directory doit contenir au minimum les colonnes `Nom`,
-`Email`, `Identifiant` et `Poste` pour la comparaison et la préparation des
-ajouts. La colonne `Lieu de travail` est utilisée pour générer les valeurs de
-lieu; si elle est absente, la valeur par défaut est appliquée.
+`Email` et `Identifiant` pour la comparaison et la préparation des ajouts.
+La colonne `Lieu de travail` est utilisée pour générer les valeurs de lieu;
+si elle est absente, la valeur par défaut est appliquée.
 
 ## Dépannage
 

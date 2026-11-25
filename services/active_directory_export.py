@@ -34,7 +34,6 @@ CSV_HEADERS = (
     "Nom",
     "Email",
     "Identifiant",
-    "Poste",
     "Lieu de travail",
     "Manager Email",
     "Collaborateurs à charge",
@@ -94,7 +93,6 @@ def _csv_row_from_user_entry(user_entry):
         "Nom": user_entry["identity"]["name"],
         "Email": user_entry["identity"]["email"],
         "Identifiant": user_entry["identity"]["username"],
-        "Poste": "",
         "Lieu de travail": user_entry["professional_info"]["work_location"],
         "Manager Email": user_entry["hierarchy"]["manager_email"],
         "Collaborateurs à charge": ", ".join(
@@ -479,7 +477,7 @@ class ActiveDirectoryCollector:
         _, previous_rows = read_csv(
             previous_export_path,
             ",",
-            {"Nom", "Email", "Identifiant", "Poste"},
+            {"Nom", "Email", "Identifiant"},
         )
         missing_rows = [
             row

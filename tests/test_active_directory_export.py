@@ -310,8 +310,8 @@ class ActiveDirectoryExportTests(unittest.TestCase):
             rows = read_rows(final_path)
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["Email"], "start@example.com")
-            self.assertEqual(rows[0]["Poste"], "")
             self.assertEqual(rows[0]["Lieu de travail"], "Paris")
+            self.assertNotIn("Poste", rows[0])
             self.assertNotIn("Business Unit", rows[0])
             self.assertEqual(list(output_directory.glob("*.tmp")), [])
             self.assertEqual(

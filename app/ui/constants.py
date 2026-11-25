@@ -8,8 +8,8 @@ ACTIVE_DIRECTORY_OUTPUT = ROOT_DIRECTORY / "liste_salarie_active_directory" / "o
 ACTIVE_DIRECTORY_INPUT = ROOT_DIRECTORY / "liste_salarie_active_directory" / "in"
 REQUIRED_COLUMNS = {
     "swile": {"Prénom", "Nom", "Email", "Matricule"},
-    "active_directory": {"Nom", "Email", "Identifiant", "Poste"},
-    "active_directory_previous": {"Nom", "Email", "Identifiant", "Poste"},
+    "active_directory": {"Nom", "Email", "Identifiant"},
+    "active_directory_previous": {"Nom", "Email", "Identifiant"},
     "template": {"Prénom", "Nom", "Email", "Matricule"},
 }
 TITLES = {

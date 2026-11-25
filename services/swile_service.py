@@ -213,7 +213,7 @@ def generate_additions(
         {"Prénom", "Nom", "Email", "Matricule"},
     )
     _, active_directory_users = read_csv(
-        active_directory_path, ",", {"Nom", "Email", "Identifiant", "Poste"}
+        active_directory_path, ",", {"Nom", "Email", "Identifiant"}
     )
     (
         additions,
@@ -278,7 +278,7 @@ LOCATION_VALUE_COLUMNS = (
 
 def _read_active_directory_users_with_locations(active_directory_path):
     """Lit l’export AD; indique si la colonne « Lieu de travail » manque."""
-    required_columns = {"Nom", "Email", "Identifiant", "Poste"}
+    required_columns = {"Nom", "Email", "Identifiant"}
     try:
         _, users = read_csv(
             active_directory_path,
