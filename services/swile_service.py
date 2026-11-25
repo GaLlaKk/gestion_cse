@@ -18,14 +18,32 @@ from services.swile_config import (
 )
 
 
+def _format_result_path(path):
+    """Retourne un chemin relatif au projet quand c’est possible."""
+    try:
+        return path.relative_to(project_root())
+    except ValueError:
+        return path
+
+
+def _format_summary_line(label, count, result_path):
+    """Formate une ligne de résumé et masque le fichier si le total est nul."""
+    line = f"{label} : {count}"
+    if count <= 0:
+        return line
+    return f"{line}\n-> {_format_result_path(result_path)}"
+
+
 def _compare_summary(swile_path, active_directory_path, output_directory):
     """Lance la comparaison et retourne les lignes de résumé."""
     found_path, not_found_path, found_count, not_found_count = compare_users(
         swile_path, active_directory_path, output_directory
     )
     return [
-        f"Utilisateurs trouvés : {found_count} -> {found_path}",
-        f"Utilisateurs non trouvés : {not_found_count} -> {not_found_path}",
+        _format_summary_line("Utilisateurs trouvés", found_count, found_path),
+        _format_summary_line(
+            "Utilisateurs non trouvés", not_found_count, not_found_path
+        ),
     ]
 
 
@@ -63,7 +81,9 @@ def _additions_summary(
         report_domain,
     )
     lines = [
-        f"Ajouts à importer : {addition_count} -> {additions_output_path}",
+        _format_summary_line(
+            "Ajouts à importer", addition_count, additions_output_path
+        ),
         f"Lignes exclues par le filtre d’e-mail : {excluded_external}",
         f"Déjà présents dans Swile : {excluded_existing}",
     ]
@@ -97,8 +117,9 @@ def _location_values_summary(
         report_domain,
     )
     lines = [
-        "Valeurs de lieu de travail générées : "
-        f"{generated_count} -> {generated_path}"
+        _format_summary_line(
+            "Valeurs de lieu de travail générées", generated_count, generated_path
+        )
     ]
     if missing_work_location_column:
         lines.append(
