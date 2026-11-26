@@ -6,6 +6,8 @@
 !**/*template*.csv
 *.json
 !**/*config*.json
+ekie.config.json
+swile_api.config.json
 !**/*template*.json
 *.jsonl
 **/photos/*.jpg
