@@ -4,8 +4,11 @@ import unittest
 from pathlib import Path
 
 from services.swile_api_config import (
+    load_swile_api_settings,
     load_swile_api_credentials,
+    load_swile_api_subscribed_product_ids,
     save_swile_api_credentials,
+    save_swile_api_subscribed_product_ids,
 )
 
 
@@ -32,6 +35,25 @@ class SwileApiConfigTests(unittest.TestCase):
         raw = json.loads(self.config_path.read_text(encoding="utf-8"))
         self.assertEqual(raw["client_id"], "client-id")
         self.assertNotEqual(raw["client_secret_encrypted"], "client-secret")
+        self.assertEqual(raw["subscribed_product_ids"], [])
+
+    def test_save_and_load_subscribed_products(self):
+        save_swile_api_subscribed_product_ids(
+            ["prod-a", " prod-b ", "prod-a", ""],
+            self.config_path,
+        )
+
+        products = load_swile_api_subscribed_product_ids(self.config_path)
+
+        self.assertEqual(products, ["prod-a", "prod-b"])
+
+    def test_save_credentials_preserves_subscribed_products(self):
+        save_swile_api_subscribed_product_ids(["prod-a"], self.config_path)
+
+        save_swile_api_credentials("client-id", "client-secret", self.config_path)
+
+        settings = load_swile_api_settings(self.config_path)
+        self.assertEqual(settings["subscribed_product_ids"], ["prod-a"])
 
     def test_invalid_encrypted_secret_is_rejected(self):
         self.config_path.write_text(

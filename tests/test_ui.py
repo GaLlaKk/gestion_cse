@@ -92,6 +92,16 @@ class DesktopAppTests(unittest.TestCase):
         )
         self.assertEqual(set(app.addition_filter_sections), {"email"})
         self.assertIn("Configuration à renseigner", app.ekie_config_status.get())
+        self.assertEqual(
+            [app.swile_api_subtabs.tab(tab, "text") for tab in app.swile_api_subtabs.tabs()],
+            [
+                "Authentification",
+                "Liste des produits",
+                "Liste des salariés",
+                "Création des salariés",
+                "Suppression des salariés",
+            ],
+        )
         self.assertEqual(app.swile_api_subtabs.tab(1, "state"), "disabled")
 
     def test_work_location_mapping_round_trip(self):
