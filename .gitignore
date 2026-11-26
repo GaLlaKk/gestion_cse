@@ -13,3 +13,4 @@ swile_api.config.json
 **/photos/*.jpg
 **/photos/*.jpeg
 *.xlsx
+swile_api.config.json
