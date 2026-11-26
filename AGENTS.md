@@ -55,9 +55,8 @@ sont créés à l’exécution.
   pendant un 429 (backoff partagé) et fournit `batch_get` (`$batch`, 20
   sous-requêtes max, relance des 429/503/504). La collecte traite des lots de
   comptes (compte avec `$expand=manager`, `directReports`) en flux continu
-  sans barrière par niveau; les photos sont téléchargées en parallèle et leurs
-  erreurs sont journalisées sans interrompre l’export. Dans les tests, patcher
-  `requests.Session.get` et `requests.Session.post` (voir `batch_post`).
+  sans barrière par niveau. Dans les tests, patcher `requests.Session.get` et
+  `requests.Session.post` (voir `batch_post`).
 - `services/version.py` vaut `dev` en local; le workflow CD le remplace par le
   tag avant le build. La version apparaît dans le titre de la fenêtre, le nom
   des archives (`GestionCSE-vX.Y.Z-<plateforme>-<arch>.zip`) et
@@ -182,22 +181,17 @@ fichier/traitement pour le flux Swile.
   transmet le lien et le code à l’interface Tkinter via un callback pour
   permettre la copie du code; en lancement CLI, le message MSAL reste affiché
   dans la console.
-- L’export Active Directory met en cache les photos Graph existantes dans
-  `liste_salarie_active_directory/out/photos`, sous le nom
-  `{Identifiant}_{user-id}.jpg`; les fichiers déjà présents ne sont pas
-  re-téléchargés. Leur récupération est désactivée par défaut et peut être
-  activée avec la case à cocher de l’interface.
 - L’export configure un journal distinct à chaque lancement dans `log/` et y
-  trace les étapes de configuration, d’authentification, de collecte, de
-  récupération des photos et d’écriture du CSV, ainsi que les erreurs.
+  trace les étapes de configuration, d’authentification, de collecte et
+  d’écriture du CSV, ainsi que les erreurs.
 - Le nettoyage RGPD (`services/file_retention.py`) purge les fichiers de
   traitement de plus de 90 jours dans `swile_active_directory/in`,
   `swile_active_directory/out`, `ekie/out`,
   `liste_salarie_active_directory/in`, `liste_salarie_active_directory/out`
   et `log/`.
-- Les événements de collecte et de photo identifient le compte concerné
-  (adresse, identifiant, ou ID Graph en dernier recours) pour faciliter le
-  diagnostic des entrées individuelles.
+- Les événements de collecte identifient le compte concerné (adresse,
+  identifiant, ou ID Graph en dernier recours) pour faciliter le diagnostic
+  des entrées individuelles.
 - L’export Active Directory écrit chaque ligne au fur et à mesure dans un CSV
   temporaire, puis le publie sous son nom final uniquement si la collecte
   réussit et si au moins une personne est exportée; cela évite de conserver
@@ -214,6 +208,9 @@ fichier/traitement pour le flux Swile.
 - Avant de modifier un export, vérifier les consommateurs du fichier et les
   en-têtes du modèle : le générateur d’ajouts et l’interface ont leurs propres
   listes de colonnes.
+- Après toute évolution qui change les finalités, données, durées de
+  conservation ou mesures de sécurité, mettre à jour `RGPD_REFERENT_CSE.md`
+  dans la même tâche.
 - Le dépôt peut contenir des CSV, journaux et autres entrées/sorties locales
   non suivis. Ne pas les supprimer, les écraser ni les ajouter au dépôt sans
   demande explicite ; éviter notamment un `git add` global.

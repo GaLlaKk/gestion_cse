@@ -9,7 +9,12 @@ L’application **Gestion CSE** sert à :
 - comparer cet export avec les fichiers Swile,
 - préparer des fichiers d’ajouts et de valeurs de lieu de travail,
 - générer un export Ekie (`.xlsx`) des salariés,
-- récupérer la liste des salariés via l’API Swile (POC).
+- utiliser l’API Swile pour :
+  - récupérer la liste des produits,
+  - récupérer la liste des salariés,
+  - créer/provisionner des salariés,
+  - inscrire des salariés aux produits,
+  - supprimer/déprovisionner des salariés.
 
 Ce document couvre les traitements de données personnelles opérés par l’application dans ce périmètre.
 
@@ -21,7 +26,8 @@ Ce document couvre les traitements de données personnelles opérés par l’app
 - Identifiant / matricule
 - Lieu de travail (si disponible)
 - Données de rapprochement entre fichiers (résultats de comparaison)
-- Identifiant salarié Swile (`id`) dans le cadre du POC API (affichage UI)
+- Identifiant salarié Swile (`id`) pour les opérations API (affichage UI)
+- Identifiants produits Swile (`productId`) pour l’inscription aux produits
 
 ### Données explicitement supprimées du périmètre (mise en conformité #49)
 - **Photos des salariés** (collecte supprimée)
@@ -35,7 +41,9 @@ Les traitements sont limités aux finalités suivantes :
 2. préparation des ajouts nécessaires,
 3. production des valeurs de lieu de travail,
 4. production de l’export salariés Ekie,
-5. consultation de la liste des salariés Swile (POC API).
+5. consultation des produits et salariés via l’API Swile,
+6. provisionnement des salariés et inscription aux produits via l’API Swile,
+7. déprovisionnement des salariés via l’API Swile.
 
 Principe appliqué : **minimisation des données** (article 5.1.c RGPD).  
 Les données non nécessaires aux finalités (photos, pôle, fonction) ne sont plus collectées.
