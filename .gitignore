@@ -14,3 +14,4 @@ swile_api.config.json
 **/photos/*.jpeg
 *.xlsx
 swile_api.config.json
+symlink.cmd
