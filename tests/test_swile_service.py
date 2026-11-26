@@ -86,7 +86,7 @@ class SwileServiceTests(unittest.TestCase):
 
         expected_path = (
             self.output_directory
-            / "collaborators-site-rattachement-20261109t203658.csv"
+            / "swile-site-rattachement-20261109t203658.csv"
         )
         self.assertTrue(expected_path.exists())
         self.assertIn(str(expected_path), result)
@@ -125,7 +125,7 @@ class SwileServiceTests(unittest.TestCase):
         expected_relative_path = (
             Path("swile_active_directory")
             / "out"
-            / "collaborators-disables-20261119t162104.csv"
+            / "swile-disables-20261119t162104.csv"
         )
         self.assertIn(
             f"Utilisateurs non trouvés : 1\n-> {expected_relative_path}",
@@ -443,7 +443,7 @@ class SwileServiceTests(unittest.TestCase):
         self.assertEqual((found_count, missing_count), (1, 1))
         self.assertEqual(found_path.name, "swile-trouves.csv")
         self.assertEqual(
-            missing_path.name, "collaborators-disables-20261109t203635.csv"
+            missing_path.name, "swile-disables-20261109t203635.csv"
         )
         with found_path.open(encoding="utf-8-sig", newline="") as stream:
             found_rows = list(csv.DictReader(stream, delimiter=";"))
@@ -543,7 +543,7 @@ class SwileServiceTests(unittest.TestCase):
         template_path = self._write_csv(
             "template.csv", ["Prénom", "Nom", "Email", "Matricule"], [], ";"
         )
-        output_path = self.output_directory / "collaborators-additions-test.csv"
+        output_path = self.output_directory / "swile-additions-test.csv"
 
         result = generate_additions(
             self.swile_path,

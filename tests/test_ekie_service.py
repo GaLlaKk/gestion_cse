@@ -16,7 +16,7 @@ class EkieServiceTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
         self.active_directory_path = self.root / "active-directory.csv"
-        self.output_path = self.root / "out" / "template_import_salariees.xlsx"
+        self.output_path = self.root / "out" / "ekie_import.xlsx"
         self.config_path = self.root / "ekie.config.json"
         with self.active_directory_path.open(
             "w", newline="", encoding="utf-8-sig"
@@ -85,7 +85,7 @@ class EkieServiceTests(unittest.TestCase):
         )
 
         self.assertIn("Lignes exportées pour Ekie : 2", summary)
-        self.assertIn("template_import_salariees.xlsx", summary)
+        self.assertIn("ekie_import.xlsx", summary)
 
 
 if __name__ == "__main__":

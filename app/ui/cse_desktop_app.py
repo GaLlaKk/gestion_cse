@@ -309,7 +309,7 @@ class CSEFileManager(
         generation_section.pack(fill="x", pady=(0, 8))
         self._create_run_button(
             generation_section,
-            "Générer template_import_salariees.xlsx",
+            "Générer ekie_import.xlsx",
             "ekie",
         )
         self._build_ekie_config_section(ekie_content)

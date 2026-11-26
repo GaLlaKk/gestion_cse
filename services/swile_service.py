@@ -59,7 +59,7 @@ def _additions_summary(
     root = project_root()
     additions_output_path = output_path or (
         output_directory
-        / f"collaborators-additions-{datetime.now():%Y%m%dt%H%M%S}.csv"
+        / f"swile-additions-{datetime.now():%Y%m%dt%H%M%S}.csv"
     )
     template_path = template_path or (
         root / "swile_active_directory" / "in" / DEFAULT_TEMPLATE_FILE
@@ -104,7 +104,7 @@ def _location_values_summary(
     """Génère les valeurs de lieu et retourne les lignes de résumé."""
     location_values_output_path = output_path or (
         output_directory
-        / f"collaborators-site-rattachement-{datetime.now():%Y%m%dt%H%M%S}.csv"
+        / f"swile-site-rattachement-{datetime.now():%Y%m%dt%H%M%S}.csv"
     )
     (
         generated_path,
@@ -186,7 +186,7 @@ def compare_users(swile_path, active_directory_path, output_directory):
     output_directory.mkdir(parents=True, exist_ok=True)
     found_path = output_directory / f"{swile_path.stem}-trouves.csv"
     not_found_path = output_directory / (
-        f"collaborators-disables-{datetime.now():%Y%m%dt%H%M%S}.csv"
+        f"swile-disables-{datetime.now():%Y%m%dt%H%M%S}.csv"
     )
 
     for output_path, users in (

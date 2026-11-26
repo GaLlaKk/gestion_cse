@@ -27,8 +27,10 @@ sont créés à l’exécution.
   `CSEFileManager`; les constantes partagées sont dans `app/ui/constants.py`.
   Un onglet `ekie` permet de générer un XLSX d’import (`email`, `first_name`,
   `last_name`, `is_cse_member`) depuis l’export Active Directory.
-  Un onglet `swile_api` propose un POC d’intégration Swile (authentification
-  OAuth `client_credentials` et récupération de la liste des salariés).
+  Un onglet `swile_api` propose l’intégration Swile (authentification OAuth
+  `client_credentials`, produits, création/suppression de salariés). Le sous-onglet
+  d’authentification reprend aussi l’éditeur de filtrage e-mail des ajouts Swile
+  (même objectif et même fichier de configuration partagé).
   La fenêtre principale est optimisée paysage avec les listes Swile et Active
   Directory côte à côte, ainsi qu’un panneau de suivi/résultats redimensionnable
   à côté des onglets. La configuration Active Directory reste repliable et
@@ -113,7 +115,7 @@ fichier/traitement pour le flux Swile.
   - `compare_users` compare des lignes en mémoire; l’écriture des résultats est
     prise en charge par `services/swile_service.py`. Le CSV des trouvés garde le
     nom source suivi de `-trouves.csv`; celui des absents s’appelle
-    `collaborators-disables-YYYYMMDDtHHMMSS.csv`.
+    `swile-disables-YYYYMMDDtHHMMSS.csv`.
 - `domain/swile_additions.py`
   - `build_additions` applique les règles métier en mémoire; le service écrit
     les fichiers d’ajouts et d’ajouts ignorés.
@@ -130,7 +132,7 @@ fichier/traitement pour le flux Swile.
     personnes incluses sont les Swile trouvées dans Active Directory et les
     ajouts admissibles selon les filtres configurés; leur valeur est déduite
     du `Lieu de travail` dans l’export Active Directory. Le fichier généré est
-    nommé `collaborators-site-rattachement-YYYYMMDDtHHMMSS.csv` avec l’heure locale
+    nommé `swile-site-rattachement-YYYYMMDDtHHMMSS.csv` avec l’heure locale
     de génération.
   - Le mapping de lieu est lu depuis `swile.config.json` à la racine du
     projet. Les règles sont

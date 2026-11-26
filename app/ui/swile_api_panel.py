@@ -9,6 +9,11 @@ from tkinter import ttk
 from app.ui.constants import DELIMITERS, REQUIRED_COLUMNS
 from domain.normalization import normalize_matricule, split_full_name
 from services.csv_files import read_csv
+from services.swile_config import (
+    load_addition_filters,
+    load_work_location_mapping,
+    save_work_location_mapping,
+)
 from services.swile_api_config import (
     SWILE_API_CONFIG_PATH,
     load_swile_api_settings,
@@ -27,6 +32,8 @@ class SwileApiPanelMixin:
         self.swile_api_saved_product_ids = []
         self.swile_api_create_candidates = {}
         self.swile_api_deactivate_candidates = {}
+        self.swile_api_email_filter_dirty = False
+        self.swile_api_email_filter_rows = []
 
         swile_api_subtabs = ttk.Notebook(swile_api_tab)
         swile_api_subtabs.pack(fill="both", expand=True)
@@ -120,6 +127,267 @@ class SwileApiPanelMixin:
                 self.swile_api_connect_button,
             )
         )
+        self.swile_api_email_filter_expanded = tk.BooleanVar(value=False)
+        self.swile_api_email_filter_toggle = ttk.Checkbutton(
+            parent,
+            text=(
+                "Afficher le filtrage des e-mails pour le fichier de "
+                "création des ajouts Swile"
+            ),
+            variable=self.swile_api_email_filter_expanded,
+            command=self._toggle_swile_api_email_filter_section,
+        )
+        self.swile_api_email_filter_toggle.pack(
+            anchor="w",
+            padx=10,
+            pady=(0, 4),
+        )
+        self.swile_api_email_filter_section = self._build_swile_api_email_filter_editor(
+            parent
+        )
+        self.swile_api_controls.append(self.swile_api_email_filter_toggle)
+        self._load_swile_api_email_filter_config()
+
+    def _build_swile_api_email_filter_editor(self, parent):
+        """Construit l’éditeur de filtrage e-mail pour les ajouts Swile API."""
+        section = tk.LabelFrame(
+            parent,
+            text="Filtrage des adresses e-mail (création des ajouts Swile)",
+            padx=8,
+            pady=6,
+        )
+        section.pack(fill="x", padx=10, pady=(0, 10))
+        default_frame = tk.Frame(section)
+        default_frame.pack(fill="x", pady=(0, 4))
+        tk.Label(default_frame, text="Valeur par défaut :", anchor="w").pack(side="left")
+        self.swile_api_email_filter_default_value = tk.StringVar(value="inclure")
+        self.swile_api_email_filter_default_entry = ttk.Combobox(
+            default_frame,
+            textvariable=self.swile_api_email_filter_default_value,
+            values=("inclure", "exclure"),
+            state="readonly",
+            width=12,
+        )
+        self.swile_api_email_filter_default_entry.pack(side="left", padx=(6, 0))
+        self.swile_api_email_filter_default_entry.bind(
+            "<<ComboboxSelected>>", self._mark_swile_api_email_filter_dirty
+        )
+
+        header = tk.Frame(section)
+        header.pack(fill="x")
+        header.columnconfigure(0, weight=3)
+        header.columnconfigure(1, weight=1)
+        tk.Label(header, text="Motifs (termes séparés par ;)").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
+        tk.Label(header, text="Valeur").grid(row=0, column=1, sticky="w")
+        self.swile_api_email_filter_rules_frame = tk.Frame(section)
+        self.swile_api_email_filter_rules_frame.columnconfigure(0, weight=1)
+        self.swile_api_email_filter_rules_frame.pack(fill="x")
+
+        actions = tk.Frame(section)
+        actions.pack(fill="x", pady=(6, 0))
+        self.swile_api_email_filter_add_button = tk.Button(
+            actions,
+            text="＋ Ajouter une règle",
+            command=lambda: self._add_swile_api_email_filter_rule(mark_dirty=True),
+        )
+        self.swile_api_email_filter_add_button.pack(side="left")
+        self.swile_api_email_filter_save_button = tk.Button(
+            actions,
+            text="Enregistrer le filtrage",
+            command=self._save_swile_api_email_filter_config,
+        )
+        self.swile_api_email_filter_save_button.pack(side="left", padx=(6, 0))
+        self.swile_api_email_filter_reload_button = tk.Button(
+            actions,
+            text="Recharger",
+            command=self._load_swile_api_email_filter_config,
+        )
+        self.swile_api_email_filter_reload_button.pack(side="left", padx=(6, 0))
+        self.swile_api_email_filter_status = tk.StringVar(value="")
+        tk.Label(
+            actions,
+            textvariable=self.swile_api_email_filter_status,
+            anchor="e",
+            fg="#555555",
+        ).pack(side="right", fill="x", expand=True)
+        self.swile_api_controls.extend(
+            (
+                self.swile_api_email_filter_default_entry,
+                self.swile_api_email_filter_add_button,
+                self.swile_api_email_filter_save_button,
+                self.swile_api_email_filter_reload_button,
+            )
+        )
+        return section
+
+    def _toggle_swile_api_email_filter_section(self):
+        """Affiche ou masque le panneau de filtrage e-mail de l’onglet API."""
+        if self.swile_api_email_filter_expanded.get():
+            if not self.swile_api_email_filter_section.winfo_manager():
+                self.swile_api_email_filter_section.pack(
+                    fill="x",
+                    padx=10,
+                    pady=(0, 10),
+                )
+        else:
+            self.swile_api_email_filter_section.pack_forget()
+
+    def _mark_swile_api_email_filter_dirty(self, event):
+        """Signale une modification non enregistrée du filtrage e-mail API."""
+        if event.widget is not None:
+            self.swile_api_email_filter_dirty = True
+
+    def _add_swile_api_email_filter_rule(
+        self, pattern="", value="exclure", mark_dirty=False
+    ):
+        """Ajoute une règle de filtrage e-mail dans l’onglet API."""
+        row_frame = tk.Frame(self.swile_api_email_filter_rules_frame)
+        row_frame.columnconfigure(0, weight=3)
+        row_frame.columnconfigure(1, weight=1)
+        pattern_var = tk.StringVar(value=pattern)
+        value_var = tk.StringVar(value=value)
+        pattern_entry = tk.Entry(row_frame, textvariable=pattern_var)
+        pattern_entry.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        pattern_entry.bind("<KeyRelease>", self._mark_swile_api_email_filter_dirty)
+        pattern_entry.bind("<<Paste>>", self._mark_swile_api_email_filter_dirty)
+        value_entry = ttk.Combobox(
+            row_frame,
+            textvariable=value_var,
+            values=("inclure", "exclure"),
+            state="readonly",
+            width=12,
+        )
+        value_entry.grid(row=0, column=1, sticky="w", padx=(0, 6))
+        value_entry.bind(
+            "<<ComboboxSelected>>", self._mark_swile_api_email_filter_dirty
+        )
+        row = self._build_rule_row(
+            row_frame,
+            pattern_var,
+            value_var,
+            (pattern_entry, value_entry),
+            self._move_swile_api_email_filter_rule,
+            self._remove_swile_api_email_filter_rule,
+        )
+        self.swile_api_email_filter_rows.append(row)
+        self.swile_api_controls.extend(row["controls"])
+        self._refresh_swile_api_email_filter_rule_rows()
+        if mark_dirty:
+            self.swile_api_email_filter_dirty = True
+
+    def _refresh_swile_api_email_filter_rule_rows(self):
+        """Réordonne les règles de filtrage e-mail affichées."""
+        self._layout_rule_rows(self.swile_api_email_filter_rows)
+
+    def _move_swile_api_email_filter_rule(self, row_frame, offset):
+        """Déplace une règle de filtrage e-mail d’un rang."""
+        current_index = next(
+            index
+            for index, row in enumerate(self.swile_api_email_filter_rows)
+            if row["frame"] is row_frame
+        )
+        target_index = current_index + offset
+        if not 0 <= target_index < len(self.swile_api_email_filter_rows):
+            return
+        self.swile_api_email_filter_rows.insert(
+            target_index, self.swile_api_email_filter_rows.pop(current_index)
+        )
+        self._refresh_swile_api_email_filter_rule_rows()
+        self.swile_api_email_filter_dirty = True
+
+    def _remove_swile_api_email_filter_rule(self, row_frame):
+        """Supprime une règle de filtrage e-mail."""
+        row_index = next(
+            index
+            for index, row in enumerate(self.swile_api_email_filter_rows)
+            if row["frame"] is row_frame
+        )
+        row = self.swile_api_email_filter_rows.pop(row_index)
+        for control in row["controls"]:
+            if control in self.swile_api_controls:
+                self.swile_api_controls.remove(control)
+        row["frame"].destroy()
+        self._refresh_swile_api_email_filter_rule_rows()
+        self.swile_api_email_filter_dirty = True
+
+    def _load_swile_api_email_filter_config(self):
+        """Charge le filtrage e-mail depuis `swile.config.json`."""
+        if self.swile_api_email_filter_dirty and not messagebox.askyesno(
+            "Recharger le filtrage e-mail ?",
+            "Les modifications non enregistrées seront perdues. Continuer ?",
+            parent=self,
+        ):
+            return
+        try:
+            filter_config = load_addition_filters()["email"]
+        except (OSError, UnicodeError, ValueError) as error:
+            self.swile_api_email_filter_status.set("Chargement impossible.")
+            messagebox.showerror(
+                "Configuration Swile invalide",
+                str(error),
+                parent=self,
+            )
+            return
+        for row in self.swile_api_email_filter_rows:
+            for control in row["controls"]:
+                if control in self.swile_api_controls:
+                    self.swile_api_controls.remove(control)
+            row["frame"].destroy()
+        self.swile_api_email_filter_rows.clear()
+        self.swile_api_email_filter_default_value.set(filter_config["default_value"])
+        for rule in filter_config["rules"]:
+            for pattern in rule["patterns"]:
+                self._add_swile_api_email_filter_rule(
+                    pattern=";".join(pattern),
+                    value=rule["value"],
+                )
+        self.swile_api_email_filter_expanded.set(not self.swile_api_email_filter_rows)
+        self._toggle_swile_api_email_filter_section()
+        self.swile_api_email_filter_dirty = False
+        self.swile_api_email_filter_status.set("Filtrage chargé.")
+
+    def _save_swile_api_email_filter_config(self):
+        """Valide puis enregistre le filtrage e-mail des ajouts Swile."""
+        default_value = self.swile_api_email_filter_default_value.get()
+        if default_value not in ("inclure", "exclure"):
+            messagebox.showerror(
+                "Valeur de filtre invalide",
+                "La valeur par défaut doit être inclure ou exclure.",
+                parent=self,
+            )
+            return
+        rules = []
+        for index, row in enumerate(self.swile_api_email_filter_rows, start=1):
+            terms = [term.strip() for term in row["pattern"].get().split(";")]
+            value = row["value"].get()
+            if not all(terms) or value not in ("inclure", "exclure"):
+                messagebox.showerror(
+                    "Règle de filtre incomplète",
+                    f"La règle {index} doit contenir des termes et une valeur valide.",
+                    parent=self,
+                )
+                return
+            rules.append({"patterns": [terms], "value": value})
+        try:
+            mapping = load_work_location_mapping()
+            filters = load_addition_filters()
+            filters["email"] = {
+                "default_value": default_value,
+                "rules": rules,
+            }
+            save_work_location_mapping(mapping, filters=filters)
+        except (OSError, UnicodeError, ValueError) as error:
+            self.swile_api_email_filter_status.set("Enregistrement impossible.")
+            messagebox.showerror(
+                "Configuration Swile invalide",
+                str(error),
+                parent=self,
+            )
+            return
+        self.swile_api_email_filter_dirty = False
+        self.swile_api_email_filter_status.set("Filtrage enregistré.")
 
     def _build_swile_api_products_tab(self, parent):
         """Construit le sous-onglet de listing des produits Swile."""

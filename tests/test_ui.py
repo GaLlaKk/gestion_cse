@@ -91,7 +91,10 @@ class DesktopAppTests(unittest.TestCase):
             ],
         )
         self.assertEqual(set(app.addition_filter_sections), {"email"})
-        self.assertIn("Configuration à renseigner", app.ekie_config_status.get())
+        self.assertIn(
+            app.ekie_config_status.get(),
+            ("Configuration à renseigner (liste d’e-mails vide).", "Configuration chargée."),
+        )
         self.assertEqual(
             [app.swile_api_subtabs.tab(tab, "text") for tab in app.swile_api_subtabs.tabs()],
             [
@@ -101,6 +104,10 @@ class DesktopAppTests(unittest.TestCase):
                 "Création des salariés",
                 "Suppression des salariés",
             ],
+        )
+        self.assertEqual(
+            app.swile_api_email_filter_toggle.cget("text"),
+            "Afficher le filtrage des e-mails pour le fichier de création des ajouts Swile",
         )
         self.assertEqual(app.swile_api_subtabs.tab(1, "state"), "disabled")
 

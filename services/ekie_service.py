@@ -63,7 +63,7 @@ def generate_ekie_employee_list(
         project_root()
         / "ekie"
         / "out"
-        / f"template_import_salariees-{datetime.now():%Y%m%dt%H%M%S}.xlsx"
+        / f"ekie_import-{datetime.now():%Y%m%dt%H%M%S}.xlsx"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cse_member_emails = load_cse_member_emails(cse_members_config_path)
