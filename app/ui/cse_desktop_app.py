@@ -27,6 +27,12 @@ from services.active_directory_export import run_active_directory_export
 from services.ekie_config import EKIE_CONFIG_PATH, load_ekie_config, save_ekie_config
 from services.ekie_service import execute_ekie_export
 
+MAIN_TAB_ACTIVE_DIRECTORY = "Active Directory"
+MAIN_TAB_SWILE = "Swile"
+MAIN_TAB_EKIE = "Ekie"
+MAIN_TAB_SWILE_API = "Swile API"
+
+
 class _OutputWriter:
     def __init__(self, app):
         """Relie les sorties du traitement au panneau de résultats Tkinter."""
@@ -99,10 +105,10 @@ class CSEFileManager(
         swile_tab = tk.Frame(self.tabs, padx=12, pady=12)
         ekie_tab = tk.Frame(self.tabs, padx=12, pady=12)
         swile_api_tab = tk.Frame(self.tabs, padx=12, pady=12)
-        self.tabs.add(active_directory_tab, text="liste_salarie_active_directory")
-        self.tabs.add(swile_tab, text="swile_active_directory")
-        self.tabs.add(ekie_tab, text="ekie")
-        self.tabs.add(swile_api_tab, text="swile_api")
+        self.tabs.add(active_directory_tab, text=MAIN_TAB_ACTIVE_DIRECTORY)
+        self.tabs.add(swile_tab, text=MAIN_TAB_SWILE)
+        self.tabs.add(ekie_tab, text=MAIN_TAB_EKIE)
+        self.tabs.add(swile_api_tab, text=MAIN_TAB_SWILE_API)
         self._build_active_directory_tab(active_directory_tab)
         self._build_swile_tab(swile_tab)
         self._build_ekie_tab(ekie_tab)
@@ -760,9 +766,9 @@ class CSEFileManager(
     def _open_output_directory(self):
         """Ouvre le dossier de résultats correspondant à l’onglet actif."""
         current_tab_name = self.tabs.tab("current", "text")
-        if current_tab_name == "liste_salarie_active_directory":
+        if current_tab_name == MAIN_TAB_ACTIVE_DIRECTORY:
             output_directory = ACTIVE_DIRECTORY_OUTPUT
-        elif current_tab_name == "ekie":
+        elif current_tab_name == MAIN_TAB_EKIE:
             output_directory = EKIE_OUTPUT
         else:
             output_directory = OUTPUT_DIRECTORY

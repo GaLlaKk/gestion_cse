@@ -19,7 +19,7 @@ Python n’est nécessaire avec ces archives.
 
 ### 2. Configurer l’accès à Active Directory
 
-Dans l’onglet **liste_salarie_active_directory**, dépliez la section de
+Dans l’onglet **Active Directory**, dépliez la section de
 configuration si nécessaire, renseignez les paramètres fournis par votre
 organisation, puis cliquez sur **Enregistrer la configuration**. Le fichier
 `liste_salarie_active_directory.config.json` est enregistré à côté de
@@ -36,9 +36,9 @@ indications affichées dans la fenêtre et saisissez le code de vérification.
 
 ### 3. Générer et comparer les listes
 
-1. Dans l’onglet **liste_salarie_active_directory**, cliquez sur
+1. Dans l’onglet **Active Directory**, cliquez sur
    **Générer la liste Active Directory**.
-2. Dans l’onglet **swile_active_directory**, sélectionnez le fichier Swile et
+2. Dans l’onglet **Swile**, sélectionnez le fichier Swile et
    le fichier Active Directory avec **Parcourir…**, ou déposez-les dans les
    zones prévues. Le bouton **Copier le dernier export** permet de reprendre
    l’export Active Directory qui vient d’être généré. Le complément facultatif
@@ -54,13 +54,13 @@ automatiquement l’export précédent proposé pour la prochaine collecte.
 Le fichier Swile utilise le séparateur `;`. L’export Active Directory utilise
 le séparateur `,`.
 
-Dans l’onglet **swile_api**, le sous-onglet **Création des salariés** est
+Dans l’onglet **Swile API**, le sous-onglet **Création des salariés** est
 masqué pour le moment. Les actions API visibles se limitent à
 l’authentification, la consultation (produits/salariés) et la suppression.
 
 ### Générer les valeurs de lieu de travail
 
-Dans l’onglet **swile_active_directory**, ouvrez le sous-onglet **Valeurs de
+Dans l’onglet **Swile**, ouvrez le sous-onglet **Valeurs de
 lieu de travail**, puis cliquez sur le bouton de génération. Cette opération
 utilise les fichiers Swile et Active Directory sélectionnés dans le sous-onglet
 **Comparer les listes**.

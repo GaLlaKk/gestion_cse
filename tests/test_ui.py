@@ -84,10 +84,10 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(
             [app.tabs.tab(tab, "text") for tab in app.tabs.tabs()],
             [
-                "liste_salarie_active_directory",
-                "swile_active_directory",
-                "ekie",
-                "swile_api",
+                "Active Directory",
+                "Swile",
+                "Ekie",
+                "Swile API",
             ],
         )
         self.assertEqual(set(app.addition_filter_sections), {"email"})

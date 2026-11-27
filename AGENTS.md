@@ -25,9 +25,9 @@ sont créés à l’exécution.
   (configuration, progression, dialogue de connexion) dans
   `app/ui/active_directory_panel.py`, tous deux sous forme de mixins de
   `CSEFileManager`; les constantes partagées sont dans `app/ui/constants.py`.
-  Un onglet `ekie` permet de générer un XLSX d’import (`email`, `first_name`,
+  Un onglet `Ekie` permet de générer un XLSX d’import (`email`, `first_name`,
   `last_name`, `is_cse_member`) depuis l’export Active Directory.
-  Un onglet `swile_api` propose l’intégration Swile (authentification OAuth
+  Un onglet `Swile API` propose l’intégration Swile (authentification OAuth
   `client_credentials`, produits, consultation/suppression de salariés). Le sous-onglet
   d’authentification reprend aussi l’éditeur de filtrage e-mail des ajouts Swile
   (même objectif et même fichier de configuration partagé). Le sous-onglet de
@@ -166,7 +166,7 @@ fichier/traitement pour le flux Swile.
     de direction sont les valeurs par défaut.
 - `app/ui/cse_desktop_app.py` porte les colonnes requises et les délimiteurs
   affichés par l’interface; les garder cohérents si le format d’entrée change.
-  L’onglet `liste_salarie_active_directory` accepte aussi un CSV Active
+  L’onglet `Active Directory` accepte aussi un CSV Active
   Directory précédent (glisser-déposer dans
   `liste_salarie_active_directory/in`) pour compléter le nouvel export avec les
   comptes absents mais encore visibles dans Microsoft Graph.
