@@ -95,8 +95,8 @@ zones prévues. Les dossiers utilisés par l’application sont :
 - Export Active Directory : `liste_salarie_active_directory/out`
 - Journaux de traitement : `log`
 
-Les résultats peuvent inclure les listes d’utilisateurs trouvés et non trouvés,
-les fichiers d’ajouts et d’ajouts ignorés, ainsi que le fichier des valeurs de
+Les résultats peuvent inclure la liste des utilisateurs non trouvés, les
+fichiers d’ajouts et d’ajouts ignorés, ainsi que le fichier des valeurs de
 lieu de travail.
 
 ### Colonnes attendues

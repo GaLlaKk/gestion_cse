@@ -36,11 +36,11 @@ def _format_summary_line(label, count, result_path):
 
 def _compare_summary(swile_path, active_directory_path, output_directory):
     """Lance la comparaison et retourne les lignes de résumé."""
-    found_path, not_found_path, found_count, not_found_count = compare_users(
+    not_found_path, found_count, not_found_count = compare_users(
         swile_path, active_directory_path, output_directory
     )
     return [
-        _format_summary_line("Utilisateurs trouvés", found_count, found_path),
+        f"Utilisateurs trouvés : {found_count}",
         _format_summary_line(
             "Utilisateurs non trouvés", not_found_count, not_found_path
         ),
@@ -172,7 +172,7 @@ def execute_swile_action(
 
 
 def compare_users(swile_path, active_directory_path, output_directory):
-    """Compare les CSV Swile et AD puis écrit les fichiers trouvés et absents."""
+    """Compare les CSV Swile et AD puis écrit le fichier des absents."""
     swile_columns, swile_users = read_csv(
         swile_path, ";", {"Prénom", "Nom", "Email", "Matricule"}
     )
@@ -184,25 +184,19 @@ def compare_users(swile_path, active_directory_path, output_directory):
     )
 
     output_directory.mkdir(parents=True, exist_ok=True)
-    found_path = output_directory / f"{swile_path.stem}-trouves.csv"
     not_found_path = output_directory / (
         f"swile-disables-{datetime.now():%Y%m%dt%H%M%S}.csv"
     )
 
-    for output_path, users in (
-        (found_path, found_users),
-        (not_found_path, not_found_users),
-    ):
-        if not users:
-            continue
-        with output_path.open("w", newline="", encoding="utf-8") as csv_file:
+    if not_found_users:
+        with not_found_path.open("w", newline="", encoding="utf-8") as csv_file:
             writer = csv.DictWriter(
                 csv_file, fieldnames=swile_columns, delimiter=";"
             )
             writer.writeheader()
-            writer.writerows(users)
+            writer.writerows(not_found_users)
 
-    return found_path, not_found_path, len(found_users), len(not_found_users)
+    return not_found_path, len(found_users), len(not_found_users)
 
 
 def generate_additions(

@@ -25,7 +25,7 @@ Ce document couvre les traitements de données personnelles opérés par l’app
 - Lieu de travail (si disponible)
 - Données de rapprochement entre fichiers (résultats de comparaison)
 - Identifiant salarié Swile (`id`) pour les opérations API (affichage UI)
-- Identifiants produits Swile (`productId`) pour l’inscription aux produits
+- Identifiants produits Swile (`productId`) pour la consultation des produits (affichage UI)
 
 ### Données explicitement supprimées du périmètre (mise en conformité #49)
 - **Photos des salariés** (collecte supprimée)
@@ -44,6 +44,7 @@ Les traitements sont limités aux finalités suivantes :
 
 Principe appliqué : **minimisation des données** (article 5.1.c RGPD).  
 Les données non nécessaires aux finalités (photos, pôle, fonction) ne sont plus collectées.
+La comparaison ne génère plus de fichier des utilisateurs trouvés (`-trouves.csv`) ; seul le fichier des utilisateurs non trouvés est exporté.
 
 ## 4) Base légale (à confirmer par l’organisation)
 
@@ -120,6 +121,7 @@ En cas de suspicion de violation :
 - [ ] Purge > 90 jours active sur `ekie/out`
 - [ ] Dossiers d’export à accès restreint
 - [ ] Accès restreint au fichier `swile_api.config.json`
+- [ ] Comparaison exportant uniquement les utilisateurs non trouvés
 - [ ] Registre de traitement mis à jour
 - [ ] Procédure d’exercice des droits documentée
 - [ ] Procédure de violation de données connue et testée
@@ -133,6 +135,7 @@ Mise en conformité RGPD #49 :
 4. suppression de la récupération de la fonction (poste),
 5. suppression du filtrage basé sur les postes.
 6. extension de la purge RGPD à `ekie/out` (exports `.xlsx` salariés).
+7. suppression de l’export des utilisateurs trouvés (`-trouves.csv`) lors de la comparaison Swile/AD.
 
 ---
 

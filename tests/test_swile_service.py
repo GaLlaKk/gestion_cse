@@ -428,28 +428,24 @@ class SwileServiceTests(unittest.TestCase):
             '{"default_value": "Avant"}',
         )
 
-    def test_compare_users_writes_found_and_missing_csvs(self):
-        """Vérifie l’écriture des résultats de comparaison dans deux CSV."""
+    def test_compare_users_writes_missing_csv_only(self):
+        """Vérifie l’écriture du CSV des absents uniquement."""
         with patch("services.swile_service.datetime") as mocked_datetime:
             mocked_datetime.now.return_value = datetime(
                 2026, 11, 9, 20, 36, 35
             )
-            found_path, missing_path, found_count, missing_count = compare_users(
+            missing_path, found_count, missing_count = compare_users(
                 self.swile_path,
                 self.active_directory_path,
                 self.output_directory,
             )
 
         self.assertEqual((found_count, missing_count), (1, 1))
-        self.assertEqual(found_path.name, "swile-trouves.csv")
         self.assertEqual(
             missing_path.name, "swile-disables-20261109t203635.csv"
         )
-        with found_path.open(encoding="utf-8-sig", newline="") as stream:
-            found_rows = list(csv.DictReader(stream, delimiter=";"))
         with missing_path.open(encoding="utf-8-sig", newline="") as stream:
             missing_rows = list(csv.DictReader(stream, delimiter=";"))
-        self.assertEqual(found_rows[0]["Email"], "ana@epsilon-france.com")
         self.assertEqual(missing_rows[0]["Email"], "zoe@example.net")
 
     def test_compare_users_does_not_write_empty_result_files(self):
@@ -461,14 +457,13 @@ class SwileServiceTests(unittest.TestCase):
             ";",
         )
 
-        found_path, missing_path, found_count, missing_count = compare_users(
+        missing_path, found_count, missing_count = compare_users(
             empty_swile_path,
             self.active_directory_path,
             self.output_directory,
         )
 
         self.assertEqual((found_count, missing_count), (0, 0))
-        self.assertFalse(found_path.exists())
         self.assertFalse(missing_path.exists())
 
     def test_generate_additions_does_not_write_empty_result_files(self):
