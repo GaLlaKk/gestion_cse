@@ -101,7 +101,6 @@ class DesktopAppTests(unittest.TestCase):
                 "Authentification",
                 "Liste des produits",
                 "Liste des salariés",
-                "Création des salariés",
                 "Suppression des salariés",
             ],
         )

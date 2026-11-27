@@ -28,9 +28,11 @@ sont créés à l’exécution.
   Un onglet `ekie` permet de générer un XLSX d’import (`email`, `first_name`,
   `last_name`, `is_cse_member`) depuis l’export Active Directory.
   Un onglet `swile_api` propose l’intégration Swile (authentification OAuth
-  `client_credentials`, produits, création/suppression de salariés). Le sous-onglet
+  `client_credentials`, produits, consultation/suppression de salariés). Le sous-onglet
   d’authentification reprend aussi l’éditeur de filtrage e-mail des ajouts Swile
-  (même objectif et même fichier de configuration partagé).
+  (même objectif et même fichier de configuration partagé). Le sous-onglet de
+  création des salariés est actuellement masqué dans l’interface (provisionnement
+  non exposé).
   La fenêtre principale est optimisée paysage avec les listes Swile et Active
   Directory côte à côte, ainsi qu’un panneau de suivi/résultats redimensionnable
   à côté des onglets. La configuration Active Directory reste repliable et

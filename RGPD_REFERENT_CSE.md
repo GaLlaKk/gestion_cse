@@ -12,8 +12,6 @@ L’application **Gestion CSE** sert à :
 - utiliser l’API Swile pour :
   - récupérer la liste des produits,
   - récupérer la liste des salariés,
-  - créer/provisionner des salariés,
-  - inscrire des salariés aux produits,
   - supprimer/déprovisionner des salariés.
 
 Ce document couvre les traitements de données personnelles opérés par l’application dans ce périmètre.
@@ -42,8 +40,7 @@ Les traitements sont limités aux finalités suivantes :
 3. production des valeurs de lieu de travail,
 4. production de l’export salariés Ekie,
 5. consultation des produits et salariés via l’API Swile,
-6. provisionnement des salariés et inscription aux produits via l’API Swile,
-7. déprovisionnement des salariés via l’API Swile.
+6. déprovisionnement des salariés via l’API Swile.
 
 Principe appliqué : **minimisation des données** (article 5.1.c RGPD).  
 Les données non nécessaires aux finalités (photos, pôle, fonction) ne sont plus collectées.

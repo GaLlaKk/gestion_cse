@@ -4,22 +4,37 @@
   "rules": [
     {
       "patterns": [
-        ["145-151 rue de courcelles"],
-        ["paris", "courcelles"],
-        ["paris", "145"]
+        [
+          "145-151 rue de courcelles"
+        ],
+        [
+          "paris",
+          "courcelles"
+        ],
+        [
+          "paris",
+          "145"
+        ]
       ],
       "value": "Paris 145"
     },
     {
       "patterns": [
-        ["29 avenue de la marne"],
-        ["wasquehal"]
+        [
+          "29 avenue de la marne"
+        ],
+        [
+          "wasquehal"
+        ]
       ],
       "value": "Lille 5.9"
     },
     {
       "patterns": [
-        ["paris", "133"]
+        [
+          "paris",
+          "133"
+        ]
       ],
       "value": "Paris 133"
     }
@@ -30,9 +45,19 @@
       "rules": [
         {
           "patterns": [
-            [".ext@"]
+            [
+              ".ext@"
+            ]
           ],
           "value": "exclure"
+        },
+        {
+          "patterns": [
+            [
+              "@epsilon-france.com"
+            ]
+          ],
+          "value": "inclure"
         }
       ]
     }

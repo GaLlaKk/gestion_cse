@@ -54,6 +54,10 @@ automatiquement l’export précédent proposé pour la prochaine collecte.
 Le fichier Swile utilise le séparateur `;`. L’export Active Directory utilise
 le séparateur `,`.
 
+Dans l’onglet **swile_api**, le sous-onglet **Création des salariés** est
+masqué pour le moment. Les actions API visibles se limitent à
+l’authentification, la consultation (produits/salariés) et la suppression.
+
 ### Générer les valeurs de lieu de travail
 
 Dans l’onglet **swile_active_directory**, ouvrez le sous-onglet **Valeurs de

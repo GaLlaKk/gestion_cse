@@ -2,7 +2,7 @@ import threading
 import tkinter as tk
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from tkinter import messagebox
 from tkinter import ttk
 
@@ -21,6 +21,7 @@ from services.swile_api_config import (
     save_swile_api_subscribed_product_ids,
 )
 from services.swile_api_service import SwileApiClient, SwileApiError
+from services.paths import project_root
 
 
 class SwileApiPanelMixin:
@@ -46,14 +47,18 @@ class SwileApiPanelMixin:
         swile_api_subtabs.add(auth_tab, text="Authentification")
         swile_api_subtabs.add(products_tab, text="Liste des produits")
         swile_api_subtabs.add(list_tab, text="Liste des salariés")
-        swile_api_subtabs.add(create_tab, text="Création des salariés")
         swile_api_subtabs.add(deactivate_tab, text="Suppression des salariés")
+
+        create_content = self._create_scrollable_tab(create_tab, padx=8, pady=8)
+        deactivate_content = self._create_scrollable_tab(
+            deactivate_tab, padx=8, pady=8
+        )
 
         self._build_swile_api_auth_tab(auth_tab)
         self._build_swile_api_products_tab(products_tab)
         self._build_swile_api_list_tab(list_tab)
-        self._build_swile_api_create_tab(create_tab)
-        self._build_swile_api_deactivate_tab(deactivate_tab)
+        self._build_swile_api_create_tab(create_content)
+        self._build_swile_api_deactivate_tab(deactivate_content)
         self._set_swile_api_connected(False)
         self._load_swile_api_credentials()
 
@@ -463,6 +468,7 @@ class SwileApiPanelMixin:
         """Construit le sous-onglet de préparation des créations."""
         section = tk.LabelFrame(parent, text="Provisionnement", padx=10, pady=8)
         section.pack(fill="both", expand=True, padx=10, pady=10)
+        self._create_input_card("active_directory", section).pack(fill="x", pady=(0, 8))
 
         product_config = tk.LabelFrame(
             section,
@@ -532,12 +538,6 @@ class SwileApiPanelMixin:
             command=lambda: self._set_swile_api_create_selection(False),
         )
         self.swile_api_select_none_additions_button.pack(side="left", padx=(6, 0))
-        self.swile_api_add_all_button = tk.Button(
-            actions,
-            text="Ajouter les personnes à Swile",
-            command=lambda: self._add_swile_api_candidates(False),
-        )
-        self.swile_api_add_all_button.pack(side="left", padx=(6, 0))
         self.swile_api_add_selected_button = tk.Button(
             actions,
             text="Ajouter les personnes sélectionnées de Swile",
@@ -577,7 +577,6 @@ class SwileApiPanelMixin:
                 self.swile_api_prepare_additions_button,
                 self.swile_api_select_all_additions_button,
                 self.swile_api_select_none_additions_button,
-                self.swile_api_add_all_button,
                 self.swile_api_add_selected_button,
             )
         )
@@ -586,6 +585,7 @@ class SwileApiPanelMixin:
         """Construit le sous-onglet de préparation des suppressions."""
         section = tk.LabelFrame(parent, text="Déprovisionnement", padx=10, pady=8)
         section.pack(fill="both", expand=True, padx=10, pady=10)
+        self._create_input_card("active_directory", section).pack(fill="x", pady=(0, 8))
 
         actions = tk.Frame(section)
         actions.pack(fill="x", pady=(0, 6))
@@ -653,7 +653,7 @@ class SwileApiPanelMixin:
     def _set_swile_api_connected(self, connected):
         """Active les sous-onglets nécessitant une connexion API valide."""
         state = "normal" if connected else "disabled"
-        for tab_index in (1, 2, 3, 4):
+        for tab_index in range(1, len(self.swile_api_subtabs.tabs())):
             self.swile_api_subtabs.tab(tab_index, state=state)
         self.swile_api_connected = connected
 
@@ -789,8 +789,9 @@ class SwileApiPanelMixin:
             client = SwileApiClient(
                 self.swile_api_client_id_var.get(),
                 self.swile_api_client_secret_var.get(),
+                logger=print,
             )
-            client.list_employees(limit=1)
+            client.list_employees(limit=1, max_results=1)
             self.swile_api_client = client
             return "Connexion Swile API réussie."
 
@@ -875,7 +876,17 @@ class SwileApiPanelMixin:
     def _display_swile_api_employees(self, rows):
         """Affiche la liste des salariés Swile dans le tableau."""
         self.swile_api_employees_tree.delete(*self.swile_api_employees_tree.get_children())
-        for row in rows:
+        self.swile_api_employees_rows_pending = rows
+        self.swile_api_employees_insert_index = 0
+        self.status.set("Affichage de la liste salariés Swile…")
+        self._insert_swile_api_employees_chunk()
+
+    def _insert_swile_api_employees_chunk(self, chunk_size=200):
+        """Insère les lignes salariés Swile par lots pour garder l’UI fluide."""
+        rows = getattr(self, "swile_api_employees_rows_pending", [])
+        start = getattr(self, "swile_api_employees_insert_index", 0)
+        end = min(start + chunk_size, len(rows))
+        for row in rows[start:end]:
             self.swile_api_employees_tree.insert(
                 "",
                 "end",
@@ -887,6 +898,12 @@ class SwileApiPanelMixin:
                     row.get("ID Swile", ""),
                 ),
             )
+        if end < len(rows):
+            self.swile_api_employees_insert_index = end
+            self.after(1, self._insert_swile_api_employees_chunk)
+            return
+        self.swile_api_employees_rows_pending = []
+        self.swile_api_employees_insert_index = 0
         self._set_output(
             "Liste salariés Swile récupérée.\n"
             f"Total : {len(rows)} utilisateur(s)."
@@ -1034,9 +1051,10 @@ class SwileApiPanelMixin:
             enrolled_count = 0
             already_enrolled_count = 0
             errors = []
+            pending_confirmations = []
             for candidate in candidates:
                 try:
-                    employee, created = self.swile_api_client.provision_employee(
+                    employee, created, matched_by = self.swile_api_client.provision_employee(
                         candidate["Email"],
                         candidate["Prénom"],
                         candidate["Nom"],
@@ -1051,6 +1069,16 @@ class SwileApiPanelMixin:
                         created_count += 1
                     else:
                         existing_count += 1
+                    if matched_by in ("employee_number", "full_name"):
+                        pending_confirmations.append(
+                            {
+                                "candidate": candidate,
+                                "employee": employee,
+                                "matched_by": matched_by,
+                                "product_ids": list(product_ids),
+                            }
+                        )
+                        continue
                     for product_id in product_ids:
                         enrollment = self.swile_api_client.enroll_employee_to_product(
                             employee_id,
@@ -1072,6 +1100,7 @@ class SwileApiPanelMixin:
                 "errors": errors,
                 "processed_count": len(candidates),
                 "products_count": len(product_ids),
+                "pending_confirmations": pending_confirmations,
             }
 
         status_message = (
@@ -1093,6 +1122,96 @@ class SwileApiPanelMixin:
             f"- Produits appliqués : {result['products_count']}",
             f"- Créés : {result['created_count']}",
             f"- Déjà existants : {result['existing_count']}",
+            f"- Inscriptions créées : {result['enrolled_count']}",
+            f"- Inscriptions déjà actives : {result['already_enrolled_count']}",
+        ]
+        pending_confirmations = result.get("pending_confirmations", [])
+        if pending_confirmations:
+            lines.append(
+                f"- En attente de validation manuelle : {len(pending_confirmations)}"
+            )
+        if result["errors"]:
+            lines.append(f"- Erreurs : {len(result['errors'])}")
+            lines.extend(result["errors"])
+        self._set_output("\n".join(lines))
+        self.status.set("Traitement terminé.")
+        if pending_confirmations:
+            self._request_swile_api_manual_confirmation(pending_confirmations)
+
+    def _request_swile_api_manual_confirmation(self, pending_confirmations):
+        """Demande la validation manuelle des rapprochements non e-mail."""
+        approved = []
+        for item in pending_confirmations:
+            candidate = item["candidate"]
+            employee = item["employee"]
+            matched_by = item["matched_by"]
+            reason = (
+                "matricule"
+                if matched_by == "employee_number"
+                else "nom + prénom"
+            )
+            if messagebox.askyesno(
+                "Valider le rapprochement Swile ?",
+                (
+                    "Un salarié existant a été trouvé sans correspondance e-mail exacte.\n\n"
+                    f"Raison du rapprochement : {reason}\n"
+                    f"Candidat AD : {candidate.get('Prénom', '')} {candidate.get('Nom', '')}"
+                    f" <{candidate.get('Email', '')}> / {candidate.get('Matricule', '')}\n"
+                    f"Salarié Swile : {employee.get('firstName', '')} {employee.get('lastName', '')}"
+                    f" <{employee.get('email', '')}> / {employee.get('employeeNumber', '')}\n\n"
+                    "Valider ce rapprochement et inscrire ce salarié aux produits ?"
+                ),
+                parent=self,
+            ):
+                approved.append(item)
+        if not approved:
+            self.status.set("Validation manuelle requise.")
+            return
+
+        def confirm_task():
+            enrolled_count = 0
+            already_enrolled_count = 0
+            errors = []
+            for item in approved:
+                employee_id = (item["employee"].get("id") or "").strip()
+                if not employee_id:
+                    errors.append(
+                        f"- {item['candidate'].get('Email', '')} : "
+                        "salarié Swile sans identifiant."
+                    )
+                    continue
+                try:
+                    for product_id in item["product_ids"]:
+                        enrollment = self.swile_api_client.enroll_employee_to_product(
+                            employee_id,
+                            product_id,
+                        )
+                        if enrollment.get("alreadyEnrolled"):
+                            already_enrolled_count += 1
+                        else:
+                            enrolled_count += 1
+                except (ValueError, SwileApiError) as error:
+                    errors.append(
+                        f"- {item['candidate'].get('Email', '')} : {error}"
+                    )
+            return {
+                "approved_count": len(approved),
+                "enrolled_count": enrolled_count,
+                "already_enrolled_count": already_enrolled_count,
+                "errors": errors,
+            }
+
+        self._run_swile_api_task(
+            "Inscription des rapprochements validés en cours…",
+            confirm_task,
+            on_success=self._display_swile_api_manual_confirmation_result,
+        )
+
+    def _display_swile_api_manual_confirmation_result(self, result):
+        """Affiche le résultat des rapprochements validés manuellement."""
+        lines = [
+            "Rapprochements validés et inscriptions terminés.",
+            f"- Rapprochements validés : {result['approved_count']}",
             f"- Inscriptions créées : {result['enrolled_count']}",
             f"- Inscriptions déjà actives : {result['already_enrolled_count']}",
         ]
@@ -1269,10 +1388,18 @@ class SwileApiPanelMixin:
         """Exécute une action Swile API dans un thread non bloquant."""
         if self.is_running:
             return
+        log_directory = project_root() / "log"
+        log_directory.mkdir(parents=True, exist_ok=True)
+        self.swile_api_current_log_path = (
+            log_directory / f"swile_api-{datetime.now():%Y%m%dt%H%M%S}.log"
+        )
         self.is_running = True
         self.current_action = "swile_api"
         self.status.set(status_message)
-        self._set_output(f"{status_message}\n")
+        self._set_output(
+            f"{status_message}\n"
+            f"Journal : {self.swile_api_current_log_path}\n"
+        )
         self._set_run_buttons_state("disabled")
         self._set_config_controls_state("disabled")
         threading.Thread(
@@ -1283,7 +1410,11 @@ class SwileApiPanelMixin:
 
     def _run_swile_api_worker(self, task, on_success):
         """Exécute la tâche API puis restaure l’interface."""
-        output_writer = _SwileApiOutputWriter(self)
+        output_writer = _SwileApiOutputWriter(
+            self,
+            self.swile_api_current_log_path,
+            stream_to_ui=False,
+        )
         try:
             with redirect_stdout(output_writer), redirect_stderr(output_writer):
                 result = task()
@@ -1324,7 +1455,7 @@ class SwileApiPanelMixin:
         if returncode == 0 and on_success is not None:
             on_success(result_payload)
         result = "\n".join(part for part in (stdout.strip(), stderr.strip()) if part)
-        if result and on_success is None:
+        if result and (returncode != 0 or on_success is None):
             self._set_output(result)
         if returncode != 0:
             self.status.set("Le traitement a échoué.")
@@ -1338,14 +1469,22 @@ class SwileApiPanelMixin:
 
 
 class _SwileApiOutputWriter:
-    def __init__(self, app):
+    def __init__(self, app, log_path, stream_to_ui=True):
         self.app = app
         self.parts = []
+        self.log_path = log_path
+        self.stream_to_ui = stream_to_ui
 
     def write(self, text):
         if text:
             self.parts.append(text)
-            self.app.after(0, self.app._append_output, text)
+            try:
+                with self.log_path.open("a", encoding="utf-8") as stream:
+                    stream.write(text)
+            except OSError:
+                pass
+            if self.stream_to_ui:
+                self.app.after(0, self.app._append_output, text)
         return len(text)
 
     def flush(self):
